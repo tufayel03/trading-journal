@@ -1,0 +1,6 @@
+{
+  "name": "Exness Trading Journal",
+  "description": "Professional Forex & Gold (XAUUSD) Trading Journal & Analytics for Exness traders with CSV parser, calendar heatmap, psychology engine, and setup playbook.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
