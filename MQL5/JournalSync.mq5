@@ -110,6 +110,57 @@ void WriteDirectSyncFile(string content)
 }
 
 //+------------------------------------------------------------------+
+//| Export Broker Candlestick Data to MQL5/Files                     |
+//+------------------------------------------------------------------+
+void ExportSymbolCandles(string sym, ENUM_TIMEFRAMES tf, string tfName, int maxBars = 1000)
+{
+   MqlRates rates[];
+   ArraySetAsSeries(rates, false);
+   int copied = CopyRates(sym, tf, 0, maxBars, rates);
+   if(copied <= 0) return;
+   
+   string cleanSym = CleanSymbol(sym);
+   StringReplace(cleanSym, ".M", "");
+   StringReplace(cleanSym, "_M", "");
+   StringReplace(cleanSym, "ECN", "");
+   StringReplace(cleanSym, "#", "");
+   
+   string json = "[";
+   for(int i = 0; i < copied; i++)
+   {
+      string item = StringFormat(
+         "{\"time\":%I64d,\"open\":%.5f,\"high\":%.5f,\"low\":%.5f,\"close\":%.5f,\"volume\":%I64d}",
+         (long)rates[i].time, rates[i].open, rates[i].high, rates[i].low, rates[i].close, rates[i].tick_volume
+      );
+      if(i > 0) json += ",";
+      json += item;
+   }
+   json += "]";
+   
+   string filename = StringFormat("candles_%s_%s.json", cleanSym, tfName);
+   int handle = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(handle != INVALID_HANDLE)
+   {
+      FileWriteString(handle, json);
+      FileClose(handle);
+   }
+}
+
+void ExportAllActiveCandles()
+{
+   string chartSym = Symbol();
+   ExportSymbolCandles(chartSym, PERIOD_M1, "1m", 1500);
+   ExportSymbolCandles(chartSym, PERIOD_M5, "5m", 1500);
+   ExportSymbolCandles(chartSym, PERIOD_M15, "15m", 1000);
+   ExportSymbolCandles(chartSym, PERIOD_M30, "30m", 800);
+   ExportSymbolCandles(chartSym, PERIOD_H1, "1h", 500);
+   ExportSymbolCandles(chartSym, PERIOD_H4, "4h", 300);
+   ExportSymbolCandles(chartSym, PERIOD_D1, "1d", 200);
+   ExportSymbolCandles(chartSym, PERIOD_W1, "1w", 150);
+   ExportSymbolCandles(chartSym, PERIOD_MN1, "1mn", 100);
+}
+
+//+------------------------------------------------------------------+
 //| Build JSON for Open Active Positions                             |
 //+------------------------------------------------------------------+
 string BuildOpenPositionsJSON()
@@ -190,6 +241,7 @@ void SyncAllTrades()
    
    long currentLogin = AccountInfoInteger(ACCOUNT_LOGIN);
    string currentServer = AccountInfoString(ACCOUNT_SERVER);
+   string currentCurrency = AccountInfoString(ACCOUNT_CURRENCY);
    
    int totalDeals = HistoryDealsTotal();
    int count = 0;
@@ -236,6 +288,7 @@ void SyncAllTrades()
                      {
                         openPrice = HistoryDealGetDouble(openTicket, DEAL_PRICE);
                         openTime  = (datetime)HistoryDealGetInteger(openTicket, DEAL_TIME);
+                        direction = (HistoryDealGetInteger(openTicket, DEAL_TYPE) == DEAL_TYPE_BUY) ? "BUY" : "SELL";
                         break;
                      }
                   }
@@ -243,7 +296,6 @@ void SyncAllTrades()
             }
          }
          
-         string currentCurrency = AccountInfoString(ACCOUNT_CURRENCY);
          string itemJSON = StringFormat(
             "{\"ticket\":\"%I64u\",\"symbol\":\"%s\",\"direction\":\"%s\",\"openPrice\":%.5f,\"closePrice\":%.5f,\"profit\":%.2f,\"lots\":%.2f,\"commission\":%.2f,\"swap\":%.2f,\"openTime\":\"%s\",\"closeTime\":\"%s\",\"comment\":\"%s\",\"accountLogin\":\"%I64d\",\"accountServer\":\"%s\",\"accountCurrency\":\"%s\"}",
             dealTicket, symbol, direction, openPrice, closePrice, profit, volume, commission, swap,
@@ -257,56 +309,6 @@ void SyncAllTrades()
       }
    }
    
-//+------------------------------------------------------------------+
-//| Export Broker Candlestick Data to MQL5/Files                     |
-//+------------------------------------------------------------------+
-void ExportSymbolCandles(string sym, ENUM_TIMEFRAMES tf, string tfName, int maxBars = 1000)
-{
-   MqlRates rates[];
-   ArraySetAsSeries(rates, false);
-   int copied = CopyRates(sym, tf, 0, maxBars, rates);
-   if(copied <= 0) return;
-   
-   string cleanSym = CleanSymbol(sym);
-   StringReplace(cleanSym, ".M", "");
-   StringReplace(cleanSym, "_M", "");
-   StringReplace(cleanSym, "ECN", "");
-   
-   string json = "[";
-   for(int i = 0; i < copied; i++)
-   {
-      string item = StringFormat(
-         "{\"time\":%I64d,\"open\":%.5f,\"high\":%.5f,\"low\":%.5f,\"close\":%.5f,\"volume\":%I64d}",
-         (long)rates[i].time, rates[i].open, rates[i].high, rates[i].low, rates[i].close, rates[i].tick_volume
-      );
-      if(i > 0) json += ",";
-      json += item;
-   }
-   json += "]";
-   
-   string filename = StringFormat("candles_%s_%s.json", cleanSym, tfName);
-   int handle = FileOpen(filename, FILE_WRITE|FILE_TXT|FILE_ANSI);
-   if(handle != INVALID_HANDLE)
-   {
-      FileWriteString(handle, json);
-      FileClose(handle);
-   }
-}
-
-void ExportAllActiveCandles()
-{
-   string chartSym = Symbol();
-   ExportSymbolCandles(chartSym, PERIOD_M1, "1m", 1500);
-   ExportSymbolCandles(chartSym, PERIOD_M5, "5m", 1500);
-   ExportSymbolCandles(chartSym, PERIOD_M15, "15m", 1000);
-   ExportSymbolCandles(chartSym, PERIOD_M30, "30m", 800);
-   ExportSymbolCandles(chartSym, PERIOD_H1, "1h", 500);
-   ExportSymbolCandles(chartSym, PERIOD_H4, "4h", 300);
-   ExportSymbolCandles(chartSym, PERIOD_D1, "1d", 200);
-   ExportSymbolCandles(chartSym, PERIOD_W1, "1w", 150);
-   ExportSymbolCandles(chartSym, PERIOD_MN1, "1mn", 100);
-}
-
    tradesJSON += "]";
    g_totalHistorySynced = count;
    
