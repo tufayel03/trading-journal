@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Direct Automated MT5 Sync Script for HyperTrade Journal
-Connects directly to the running MetaTrader 5 terminal, extracts all account info,
-closed trade history, active open positions, and broker candlestick data, then syncs to Journal.
+Multi-Terminal Direct Automated MT5 Sync Script for HyperTrade Journal
+Connects directly to all running/installed MetaTrader 5 terminals (The5ers, Exness, etc.),
+extracts all account info, closed trade history, active open positions, and broker candlestick data.
 """
 
 import sys
@@ -24,10 +24,12 @@ CANDLES_DIR = os.path.join(DATA_DIR, "candles")
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(CANDLES_DIR, exist_ok=True)
 
-KNOWN_PATHS = [
+TERMINAL_PATHS = [
+    r"C:\Program Files\Five Percent Online MetaTrader 5\terminal64.exe",
     r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe",
     r"C:\Program Files\Exness MetaTrader 5\terminal64.exe",
-    r"C:\Program Files\MetaTrader 5\terminal64.exe"
+    r"C:\Program Files\MetaTrader 5\terminal64.exe",
+    r"C:\Program Files\ACG Markets MT5 Terminal\terminal64.exe"
 ]
 
 def format_iso(timestamp):
@@ -41,37 +43,44 @@ def clean_symbol(sym):
     s = str(sym).strip().upper()
     return re.sub(r'(\.M|_M|ECN|#|C|M)$', '', s, flags=re.IGNORECASE).upper()
 
-def init_mt5():
-    if mt5.terminal_info() is not None:
-        return True
-    for p in KNOWN_PATHS:
-        if os.path.exists(p):
-            if mt5.initialize(path=p):
-                return True
-    return mt5.initialize()
+def sync_terminal(path):
+    if not os.path.exists(path):
+        return None
 
-def sync_now():
-    if not init_mt5():
-        print(json.dumps({"success": False, "error": "Failed to connect to MetaTrader 5"}))
-        return
+    try:
+        mt5.shutdown()
+    except Exception:
+        pass
+
+    if not mt5.initialize(path=path):
+        return None
 
     acc = mt5.account_info()
     if acc is None:
-        print(json.dumps({"success": False, "error": "Failed to get account info from MT5"}))
         mt5.shutdown()
-        return
+        return None
 
     login = str(acc.login)
     server = acc.server
     currency = acc.currency or "USD"
-    balance = acc.balance
-    equity = acc.equity
-    margin = acc.margin
-    free_margin = acc.margin_free
-    name = acc.name
+    is_cent = (
+        currency.upper() == "USC" or
+        "CENT" in currency.upper() or
+        "cent" in server.lower()
+    )
+    if is_cent:
+        currency = "USC"
 
-    print(f"Connected to MT5 Account: {login} ({name}) on {server}")
-    print(f"Balance: ${balance:.2f} {currency} | Equity: ${equity:.2f} {currency}")
+    balance = float(acc.balance)
+    equity = float(acc.equity)
+    margin = float(acc.margin)
+    free_margin = float(acc.margin_free)
+    name = acc.name or ""
+
+    print(f"\n==========================================")
+    print(f"Syncing MT5: {login} ({name}) | Server: {server}")
+    print(f"Path: {path}")
+    print(f"Balance: {balance:.2f} {currency} | Equity: {equity:.2f} {currency}")
 
     # 1. Fetch Open Positions
     positions = mt5.positions_get() or []
@@ -97,14 +106,14 @@ def sync_now():
             "comment": p.comment or "",
             "accountLogin": login,
             "accountServer": server,
-            "accountCurrency": currency
+            "accountCurrency": currency,
+            "isCent": is_cent
         })
 
     # 2. Fetch Closed Deals History
     deals = mt5.history_deals_get(0, 2000000000) or []
-    print(f"Found {len(positions)} active positions, {len(deals)} raw history deals")
+    print(f"Found {len(positions)} active open position(s), {len(deals)} history deal(s)")
 
-    # Map positions to entry deals
     pos_entry_map = {}
     for d in deals:
         if d.entry == 0:  # DEAL_ENTRY_IN
@@ -124,7 +133,7 @@ def sync_now():
             commission = round(float(d.commission), 2)
             swap = round(float(d.swap), 2)
             volume = round(float(d.volume), 2)
-            direction = "SELL" if d.type == 0 else "BUY"  # Close BUY means original was SELL
+            direction = "SELL" if d.type == 0 else "BUY"
 
             open_deal = pos_entry_map.get(d.position_id)
             if open_deal:
@@ -154,57 +163,14 @@ def sync_now():
                 "accountLogin": login,
                 "accountServer": server,
                 "accountCurrency": currency,
+                "isCent": is_cent,
                 "status": "CLOSED"
             }
             closed_trades_json.append(trade_obj)
 
-    print(f"Constructed {len(closed_trades_json)} completed closed trades")
+    print(f"Constructed {len(closed_trades_json)} completed trade(s)")
 
-    account_json = {
-        "login": login,
-        "server": server,
-        "name": name,
-        "balance": balance,
-        "equity": equity,
-        "margin": margin,
-        "freeMargin": free_margin,
-        "currency": currency,
-        "lastUpdate": format_iso(int(datetime.now(timezone.utc).timestamp()))
-    }
-
-    full_bundle = {
-        "account": account_json,
-        "openPositions": open_positions_json,
-        "trades": closed_trades_json
-    }
-
-    # 3. Post to local Webhook
-    try:
-        req = urllib.request.Request(
-            "http://localhost:3000/api/webhook/batch",
-            data=json.dumps(full_bundle).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            res_data = response.read().decode("utf-8")
-            print(f"Webhook batch sync response: {res_data}")
-    except Exception as e:
-        print(f"Webhook push notice: {e}")
-
-    # Also save to local data files as backup
-    with open(os.path.join(DATA_DIR, "account_status.json"), "w", encoding="utf-8") as f:
-        json.dump({
-            "account": account_json,
-            "accounts": {login: account_json},
-            "openPositions": open_positions_json,
-            "lastSync": format_iso(int(datetime.now(timezone.utc).timestamp())),
-            "totalSyncedDeals": len(closed_trades_json)
-        }, f, indent=2)
-
-    with open(os.path.join(DATA_DIR, "synced_trades.json"), "w", encoding="utf-8") as f:
-        json.dump(closed_trades_json, f, indent=2)
-
-    # 4. Fetch Broker Candles for traded symbols
+    # 3. Fetch Candles
     tf_map = {
         "1m": mt5.TIMEFRAME_M1,
         "5m": mt5.TIMEFRAME_M5,
@@ -216,9 +182,6 @@ def sync_now():
         "1w": mt5.TIMEFRAME_W1,
         "1mn": mt5.TIMEFRAME_MN1,
     }
-
-    symbols_to_fetch = list(set([clean_symbol(s) for s in traded_symbols if clean_symbol(s)]))
-    print(f"Fetching authentic candle data for symbols: {symbols_to_fetch}...")
 
     for raw_sym in traded_symbols:
         c_sym = clean_symbol(raw_sym)
@@ -244,9 +207,81 @@ def sync_now():
             except Exception:
                 pass
 
-    print("Candle database sync complete.")
     mt5.shutdown()
-    print("SUCCESS: 100% MT5 Direct Sync Completed successfully!")
+
+    account_json = {
+        "login": login,
+        "server": server,
+        "name": name,
+        "balance": balance,
+        "equity": equity,
+        "margin": margin,
+        "freeMargin": free_margin,
+        "currency": currency,
+        "isCent": is_cent,
+        "status": "connected",
+        "openPositionsCount": len(open_positions_json),
+        "lastUpdate": format_iso(int(datetime.now(timezone.utc).timestamp()))
+    }
+
+    return {
+        "account": account_json,
+        "openPositions": open_positions_json,
+        "trades": closed_trades_json
+    }
+
+def sync_all():
+    all_accounts = {}
+    all_open_positions = []
+    all_trades = []
+
+    # Load existing status file so we preserve other accounts (e.g. Cent accounts)
+    status_file = os.path.join(DATA_DIR, "account_status.json")
+    if os.path.exists(status_file):
+        try:
+            with open(status_file, "r", encoding="utf-8") as f:
+                existing_status = json.load(f)
+                if existing_status.get("accounts"):
+                    all_accounts.update(existing_status["accounts"])
+        except Exception:
+            pass
+
+    for path in TERMINAL_PATHS:
+        if os.path.exists(path):
+            result = sync_terminal(path)
+            if result:
+                acc = result["account"]
+                login = acc["login"]
+                all_accounts[login] = acc
+                all_open_positions.extend(result["openPositions"])
+                all_trades.extend(result["trades"])
+
+                # Post individual bundle to webhook
+                try:
+                    req = urllib.request.Request(
+                        "http://localhost:3000/api/webhook/batch",
+                        data=json.dumps(result).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        print(f"Synced {login} to journal webhook.")
+                except Exception as e:
+                    print(f"Webhook notice: {e}")
+
+    # Save aggregated account status
+    active_login = list(all_accounts.keys())[0] if all_accounts else None
+    primary_acc = all_accounts.get(active_login) if active_login else None
+
+    with open(os.path.join(DATA_DIR, "account_status.json"), "w", encoding="utf-8") as f:
+        json.dump({
+            "account": primary_acc,
+            "accounts": all_accounts,
+            "openPositions": all_open_positions,
+            "lastSync": format_iso(int(datetime.now(timezone.utc).timestamp())),
+            "totalSyncedDeals": len(all_trades)
+        }, f, indent=2)
+
+    print(f"\nSUCCESS: All {len(all_accounts)} accounts synced automatically!")
 
 if __name__ == "__main__":
-    sync_now()
+    sync_all()

@@ -173,7 +173,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                   </button>
 
                   {accounts.map(acc => {
-                    const isAccCent = acc.isCent || acc.currency === 'USC' || String(acc.server).toLowerCase().includes('cent');
+                    const isAccCent = Boolean(acc.isCent || acc.currency === 'USC' || (String(acc.server).toLowerCase().includes('cent') && !String(acc.server).toLowerCase().includes('fivepercent'))) && acc.currency !== 'USD';
                     const isSelected = selectedAccount === String(acc.login);
                     const isDisconnected = acc.status === 'disconnected';
 

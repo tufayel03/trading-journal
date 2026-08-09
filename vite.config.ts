@@ -69,11 +69,13 @@ function mt5SyncPlugin(): Plugin {
         const accountServer = trade.accountServer || (defaultAccount?.server ? String(defaultAccount.server) : 'Live MT5');
         const accountCurrency = String(trade.accountCurrency || defaultAccount?.currency || 'USD').toUpperCase();
 
-        const isCent = accountCurrency === 'USC' || 
+        const isCent = (accountCurrency === 'USC' || 
                        accountCurrency.includes('CENT') || 
-                       accountServer.toLowerCase().includes('cent') ||
+                       (accountServer.toLowerCase().includes('cent') && !accountServer.toLowerCase().includes('fivepercent') && !accountServer.toLowerCase().includes('percent')) ||
                        Boolean(defaultAccount?.isCent) ||
-                       Boolean(trade?.isCent);
+                       Boolean(trade?.isCent)) &&
+                       !accountServer.toLowerCase().includes('fivepercent') &&
+                       accountCurrency !== 'USD';
         const conversionRate = isCent ? 0.01 : 1.0;
 
         const rawProfit = parseFloat(trade.profit || trade.netProfit || 0);
@@ -226,9 +228,12 @@ function mt5SyncPlugin(): Plugin {
           const existingAcc = inMemoryStatus.accounts?.[loginKey];
           const isPreviouslyDisconnected = existingAcc?.status === 'disconnected';
 
-          const isCentAccount = String(accountData.currency || '').toUpperCase() === 'USC' || 
+          const isCentAccount = (String(accountData.currency || '').toUpperCase() === 'USC' || 
                                 String(accountData.currency || '').toUpperCase().includes('CENT') ||
-                                String(accountData.server || '').toLowerCase().includes('cent');
+                                String(accountData.server || '').toLowerCase().includes('cent')) &&
+                                !String(accountData.server || '').toLowerCase().includes('fivepercent') &&
+                                !String(accountData.server || '').toLowerCase().includes('percent') &&
+                                String(accountData.currency || '').toUpperCase() !== 'USD';
           const rate = isCentAccount ? 0.01 : 1.0;
           const nativeBalance = parseFloat(accountData.balance || 0);
           const nativeEquity = parseFloat(accountData.equity || 0);

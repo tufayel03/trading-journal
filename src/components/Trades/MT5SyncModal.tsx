@@ -50,6 +50,7 @@ export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [modalAccountToRemove, setModalAccountToRemove] = useState<{ login: string } | null>(null);
   const [newLoginInput, setNewLoginInput] = useState<string>('');
+  const [newServerInput, setNewServerInput] = useState<string>('FivePercentOnline-Real');
   const [newIsCent, setNewIsCent] = useState<boolean>(false);
   const [showAddBox, setShowAddBox] = useState<boolean>(false);
 
@@ -374,20 +375,20 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs">
           
-          {/* Exness History Protection & Vault Callout */}
+          {/* Multi-Broker History Protection & Vault Callout */}
           <div className="bg-gradient-to-r from-emerald-950/40 via-[#0B0F19] to-cyan-950/30 p-4 rounded-xl border border-emerald-500/30 flex items-start gap-3.5 shadow-lg">
             <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 mt-0.5">
               <ShieldCheck className="w-5 h-5 text-emerald-400" />
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm text-emerald-300">Permanent Trade History Vault Active</span>
+                <span className="font-extrabold text-sm text-emerald-300">Multi-Broker Trade History Vault Active</span>
                 <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                  Exness History Safe
+                  Exness, The5ers & Prop Firms Safe
                 </span>
               </div>
               <p className="text-[11px] text-gray-300 leading-relaxed">
-                Even if Exness or MT5 deletes/archives closed deals after 30–90 days, your trade history is <strong>permanently preserved in your local journal database</strong>. Every newly connected or synced account adds to this vault without ever overwriting historical trades.
+                Even if brokers or MT5 archive closed deals after 30–90 days, your trade history is <strong>permanently preserved in your local journal database</strong>. Every connected account seamlessly syncs its authentic history and live positions.
               </p>
             </div>
           </div>
@@ -399,30 +400,68 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                 <Plus className="w-4 h-4 text-[var(--accent-gold)]" />
                 <span>Connect or Restore MT5 Account</span>
               </div>
-              {!showAddBox && (
+              
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowAddBox(true)}
-                  className="px-2.5 py-1 rounded bg-[var(--accent-gold)]/10 hover:bg-[var(--accent-gold)]/20 text-[var(--accent-gold)] text-xs font-bold transition-colors"
+                  onClick={handleForceScanNow}
+                  disabled={isScanning}
+                  className="px-2.5 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-bold flex items-center gap-1 transition-colors border border-emerald-500/30"
+                  title="Auto-detect and sync all running MT5 terminals (The5ers, Exness, etc.)"
                 >
-                  + Add Account
+                  <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
+                  <span>Auto-Detect All Accounts</span>
                 </button>
-              )}
+
+                {!showAddBox && (
+                  <button
+                    onClick={() => setShowAddBox(true)}
+                    className="px-2.5 py-1 rounded bg-[var(--accent-gold)]/10 hover:bg-[var(--accent-gold)]/20 text-[var(--accent-gold)] text-xs font-bold transition-colors"
+                  >
+                    + Add Account
+                  </button>
+                )}
+              </div>
             </div>
 
             {showAddBox && (
               <div className="pt-2 border-t border-gray-800 space-y-3 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <div className="flex-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
                     <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
-                      MT5 Account Login Number
+                      Account Login #
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. 276133463"
+                      placeholder="e.g. 26573113"
                       value={newLoginInput}
                       onChange={(e) => setNewLoginInput(e.target.value)}
                       className="w-full bg-[#111827] border border-gray-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:border-[var(--accent-gold)] outline-none"
                     />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                      Broker Server
+                    </label>
+                    <select
+                      value={newServerInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNewServerInput(val);
+                        if (val.includes('Cent') || val.includes('Real20')) {
+                          setNewIsCent(true);
+                        } else {
+                          setNewIsCent(false);
+                        }
+                      }}
+                      className="w-full bg-[#111827] border border-gray-700 text-white rounded-lg px-2.5 py-1.5 text-xs focus:border-[var(--accent-gold)] outline-none"
+                    >
+                      <option value="FivePercentOnline-Real">The5ers (FivePercentOnline-Real - USD)</option>
+                      <option value="Exness-MT5Real15">Exness (Exness-MT5Real15 - USD)</option>
+                      <option value="Exness-MT5Real26">Exness (Exness-MT5Real26 - USD)</option>
+                      <option value="Exness-MT5Real20">Exness Standard Cent (Exness-MT5Real20 - USC)</option>
+                      <option value="Custom MT5 Broker">Other / Custom MT5 Server</option>
+                    </select>
                   </div>
 
                   <div className="flex items-center gap-2 pt-4 sm:pt-4">
@@ -443,7 +482,7 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                         if (onAddAccount) {
                           await onAddAccount(
                             trimmed,
-                            newIsCent ? 'Exness-MT5Real20' : 'Exness-MT5Real26',
+                            newServerInput,
                             newIsCent ? 'USC' : 'USD',
                             newIsCent
                           );
@@ -454,7 +493,7 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                       }}
                       className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow flex items-center gap-1 transition-colors shrink-0"
                     >
-                      <span>Connect & Sync</span>
+                      <span>Connect</span>
                       <ArrowRight className="w-3 h-3" />
                     </button>
                     
@@ -478,42 +517,51 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                   <Activity className="w-3.5 h-3.5" /> Managed MT5 Accounts ({accounts.length})
                 </span>
                 <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  History Vault Protected
+                  Vault Protected
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {accounts.map(acc => {
-                  const isAccCent = acc.isCent || acc.currency === 'USC' || String(acc.server).toLowerCase().includes('cent');
+                  const isThe5ers = String(acc.server || '').toLowerCase().includes('fivepercent');
+                  const isAccCent = Boolean(acc.isCent || acc.currency === 'USC' || (String(acc.server).toLowerCase().includes('cent') && !isThe5ers)) && acc.currency !== 'USD';
                   const isDisconnected = acc.status === 'disconnected';
 
                   return (
                     <div key={acc.login} className={`bg-[#0B0F19] p-3.5 rounded-xl border flex flex-col justify-between gap-3 ${
                       isDisconnected
                         ? 'border-slate-700/60 opacity-85'
-                        : (isAccCent ? 'border-amber-500/30' : 'border-emerald-500/30')
+                        : (isThe5ers 
+                            ? 'border-purple-500/40 bg-gradient-to-b from-[#0F0D1C] to-[#0B0F19]' 
+                            : (isAccCent ? 'border-amber-500/30' : 'border-emerald-500/30'))
                     }`}>
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full ${
-                              isDisconnected ? 'bg-slate-500' : (isAccCent ? 'bg-amber-400' : 'bg-emerald-400')
+                              isDisconnected ? 'bg-slate-500' : (isThe5ers ? 'bg-purple-400' : (isAccCent ? 'bg-amber-400' : 'bg-emerald-400'))
                             } ${!isDisconnected ? 'animate-pulse' : ''}`} />
                             <span className="font-bold text-white text-xs font-mono">Account #{acc.login}</span>
                             <span className={`text-[9px] px-1.5 py-0.2 rounded border font-bold ${
                               isDisconnected
                                 ? 'bg-slate-500/20 text-slate-400 border-slate-500/30'
-                                : (isAccCent 
-                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20')
+                                : (isThe5ers
+                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                    : (isAccCent 
+                                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'))
                             }`}>
-                              {isDisconnected ? 'Disconnected' : (isAccCent ? 'Standard Cent (USC)' : (acc.server || 'Live USD'))}
+                              {isDisconnected 
+                                ? 'Disconnected' 
+                                : (isThe5ers 
+                                    ? 'The5ers (USD)' 
+                                    : (isAccCent ? 'Standard Cent (USC)' : (acc.server || 'Live USD')))}
                             </span>
                           </div>
                           <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-2">
                             <span>
                               Balance: <strong className="text-gray-200 font-mono">
-                                {isAccCent ? `${acc.balance?.toFixed(2)} USC` : `$${acc.balance?.toFixed(2)}`}
+                                {isAccCent ? `${acc.balance?.toFixed(2)} USC` : `$${acc.balance?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                               </strong>
                               {isAccCent && <span className="text-gray-400 ml-1">(≈ ${((acc.balance || 0) / 100).toFixed(2)})</span>}
                             </span>
@@ -525,9 +573,9 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                         <div className="text-right">
                           <div className="text-[9px] text-gray-400 uppercase font-semibold">Live Equity</div>
                           <div className={`text-sm font-extrabold font-mono ${
-                            isDisconnected ? 'text-gray-400' : (isAccCent ? 'text-amber-400' : 'text-emerald-400')
+                            isDisconnected ? 'text-gray-400' : (isThe5ers ? 'text-purple-300' : (isAccCent ? 'text-amber-400' : 'text-emerald-400'))
                           }`}>
-                            {isAccCent ? `${acc.equity?.toFixed(2)} USC` : `$${acc.equity?.toFixed(2)}`}
+                            {isAccCent ? `${acc.equity?.toFixed(2)} USC` : `$${acc.equity?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                           </div>
                           {isAccCent && (
                             <div className="text-[10px] text-gray-400 font-mono">
