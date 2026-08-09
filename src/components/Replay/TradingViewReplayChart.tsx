@@ -388,7 +388,7 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
         time: closestExitCandle.time as UTCTimestamp,
         position: isBuy ? 'aboveBar' : 'belowBar',
         color: isWin ? '#16A34A' : trade.netProfit < 0 ? '#DC2626' : '#787B86',
-        shape: 'circle'
+        shape: isBuy ? 'arrowDown' : 'arrowUp'
       });
     }
 
