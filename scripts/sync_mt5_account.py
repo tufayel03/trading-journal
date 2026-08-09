@@ -66,10 +66,12 @@ def sync_terminal(path):
     is_cent = (
         currency.upper() == "USC" or
         "CENT" in currency.upper() or
-        "cent" in server.lower()
-    )
+        ("cent" in server.lower() and "fivepercent" not in server.lower() and "percent" not in server.lower())
+    ) and currency.upper() != "USD"
     if is_cent:
         currency = "USC"
+    else:
+        currency = acc.currency or "USD"
 
     balance = float(acc.balance)
     equity = float(acc.equity)
