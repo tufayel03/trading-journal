@@ -136,6 +136,9 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
     downWick: '#4E525D',
     downBorder: '#4E525D',
     entryLine: isLight ? '#0284C7' : '#06B6D4',
+    exitLineWin: isLight ? '#16A34A' : '#10B981',
+    exitLineLoss: isLight ? '#DC2626' : '#EF4444',
+    exitLineEven: isLight ? '#6B7280' : '#9CA3AF',
     slLine: isLight ? '#DC2626' : '#EF4444',
     tpLine: isLight ? '#16A34A' : '#10B981'
   };
@@ -444,7 +447,26 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
       }
     }
 
-  }, [candles, visibleCount, trade, precision, theme, themeColors.entryLine, themeColors.slLine, themeColors.tpLine]);
+    // Exit Price Line when exit is reached
+    if (hasExitReached && trade.closePrice && candlestickSeriesRef.current) {
+      const exitLineColor = isWin
+        ? themeColors.exitLineWin
+        : trade.netProfit < 0
+        ? themeColors.exitLineLoss
+        : themeColors.exitLineEven;
+
+      const exitLine = candlestickSeriesRef.current.createPriceLine({
+        price: trade.closePrice,
+        color: exitLineColor,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `EXIT (${trade.closePrice.toFixed(precision)})`
+      });
+      priceLinesRef.current.push(exitLine);
+    }
+
+  }, [candles, visibleCount, trade, precision, theme, themeColors.entryLine, themeColors.exitLineWin, themeColors.exitLineLoss, themeColors.exitLineEven, themeColors.slLine, themeColors.tpLine]);
 
   return (
     <div className={`relative w-full h-full min-w-0 min-h-0 select-none overflow-hidden flex ${isLight ? 'bg-white' : 'bg-[#0B0F19]'}`}>
