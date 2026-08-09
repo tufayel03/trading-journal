@@ -23,6 +23,7 @@ interface MT5SyncModalProps {
   accountStatus?: AccountStatus | null;
   accounts?: AccountStatus[];
   onClearAll?: () => void;
+  onToggleAccountStatus?: (login: string, action: 'connect' | 'disconnect') => void;
 }
 
 export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
@@ -31,7 +32,8 @@ export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
   onSyncNewTrades,
   accountStatus,
   accounts = [],
-  onClearAll
+  onClearAll,
+  onToggleAccountStatus
 }) => {
   if (!isOpen) return null;
 
@@ -358,58 +360,107 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs">
           
+          {/* Exness History Protection & Vault Callout */}
+          <div className="bg-gradient-to-r from-emerald-950/40 via-[#0B0F19] to-cyan-950/30 p-4 rounded-xl border border-emerald-500/30 flex items-start gap-3.5 shadow-lg">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 mt-0.5">
+              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm text-emerald-300">Permanent Trade History Vault Active</span>
+                <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                  Exness History Safe
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                Even if Exness or MT5 deletes/archives closed deals after 30–90 days, your trade history is <strong>permanently preserved in your local journal database</strong>. Every newly connected or synced account adds to this vault without ever overwriting historical trades.
+              </p>
+            </div>
+          </div>
+
           {/* Multi-Account Status Overview */}
           {accounts.length > 0 ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-gray-300">
                 <span className="font-bold uppercase tracking-wider text-[10px] text-[var(--accent-gold)] flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5" /> Connected MT5 Accounts ({accounts.length})
+                  <Activity className="w-3.5 h-3.5" /> Managed MT5 Accounts ({accounts.length})
                 </span>
                 <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  Multi-Account Auto-Sync Active
+                  History Vault Protected
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {accounts.map(acc => {
                   const isAccCent = acc.isCent || acc.currency === 'USC' || String(acc.server).toLowerCase().includes('cent');
+                  const isDisconnected = acc.status === 'disconnected';
+
                   return (
-                    <div key={acc.login} className={`bg-[#0B0F19] p-3.5 rounded-xl border flex items-center justify-between ${
-                      isAccCent ? 'border-amber-500/30' : 'border-emerald-500/30'
+                    <div key={acc.login} className={`bg-[#0B0F19] p-3.5 rounded-xl border flex flex-col justify-between gap-3 ${
+                      isDisconnected
+                        ? 'border-slate-700/60 opacity-85'
+                        : (isAccCent ? 'border-amber-500/30' : 'border-emerald-500/30')
                     }`}>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${isAccCent ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
-                          <span className="font-bold text-white text-xs font-mono">Account #{acc.login}</span>
-                          <span className={`text-[9px] px-1.5 py-0.2 rounded border font-bold ${
-                            isAccCent 
-                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          }`}>
-                            {isAccCent ? 'Standard Cent (USC)' : (acc.server || 'Live USD')}
-                          </span>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${
+                              isDisconnected ? 'bg-slate-500' : (isAccCent ? 'bg-amber-400' : 'bg-emerald-400')
+                            } ${!isDisconnected ? 'animate-pulse' : ''}`} />
+                            <span className="font-bold text-white text-xs font-mono">Account #{acc.login}</span>
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded border font-bold ${
+                              isDisconnected
+                                ? 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                                : (isAccCent 
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20')
+                            }`}>
+                              {isDisconnected ? 'Disconnected' : (isAccCent ? 'Standard Cent (USC)' : (acc.server || 'Live USD'))}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-2">
+                            <span>
+                              Balance: <strong className="text-gray-200 font-mono">
+                                {isAccCent ? `${acc.balance?.toFixed(2)} USC` : `$${acc.balance?.toFixed(2)}`}
+                              </strong>
+                              {isAccCent && <span className="text-gray-400 ml-1">(≈ ${((acc.balance || 0) / 100).toFixed(2)})</span>}
+                            </span>
+                            <span>•</span>
+                            <span>Open: <strong className="text-emerald-400 font-mono">{acc.openPositionsCount || 0}</strong></span>
+                          </div>
                         </div>
-                        <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-2">
-                          <span>
-                            Balance: <strong className="text-gray-200 font-mono">
-                              {isAccCent ? `${acc.balance?.toFixed(2)} USC` : `$${acc.balance?.toFixed(2)}`}
-                            </strong>
-                            {isAccCent && <span className="text-gray-400 ml-1">(≈ ${((acc.balance || 0) / 100).toFixed(2)})</span>}
-                          </span>
-                          <span>•</span>
-                          <span>Open: <strong className="text-emerald-400 font-mono">{acc.openPositionsCount || 0}</strong></span>
+
+                        <div className="text-right">
+                          <div className="text-[9px] text-gray-400 uppercase font-semibold">Live Equity</div>
+                          <div className={`text-sm font-extrabold font-mono ${
+                            isDisconnected ? 'text-gray-400' : (isAccCent ? 'text-amber-400' : 'text-emerald-400')
+                          }`}>
+                            {isAccCent ? `${acc.equity?.toFixed(2)} USC` : `$${acc.equity?.toFixed(2)}`}
+                          </div>
+                          {isAccCent && (
+                            <div className="text-[10px] text-gray-400 font-mono">
+                              ≈ ${((acc.equity || 0) / 100).toFixed(2)} USD
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      <div className="text-right">
-                        <div className="text-[9px] text-gray-400 uppercase font-semibold">Live Equity</div>
-                        <div className={`text-sm font-extrabold font-mono ${isAccCent ? 'text-amber-400' : 'text-emerald-400'}`}>
-                          {isAccCent ? `${acc.equity?.toFixed(2)} USC` : `$${acc.equity?.toFixed(2)}`}
-                        </div>
-                        {isAccCent && (
-                          <div className="text-[10px] text-gray-400 font-mono">
-                            ≈ ${((acc.equity || 0) / 100).toFixed(2)} USD
-                          </div>
+                      {/* Account Action Strip */}
+                      <div className="pt-2 border-t border-gray-800/80 flex items-center justify-between">
+                        <span className="text-[10px] text-gray-400">
+                          {isDisconnected ? 'Trades saved in vault' : 'Live real-time auto sync'}
+                        </span>
+                        {onToggleAccountStatus && (
+                          <button
+                            onClick={() => onToggleAccountStatus(String(acc.login), isDisconnected ? 'connect' : 'disconnect')}
+                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                              isDisconnected 
+                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md' 
+                                : 'bg-slate-800 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-gray-700'
+                            }`}
+                          >
+                            {isDisconnected ? 'Reconnect Sync' : 'Disconnect Account'}
+                          </button>
                         )}
                       </div>
                     </div>

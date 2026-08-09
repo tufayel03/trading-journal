@@ -211,9 +211,13 @@ export const TradeTable: React.FC<TradeTableProps> = ({
         
         {/* Table Header Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1F2937]">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <Layers className="w-5 h-5 text-emerald-400" />
             <h3 className="text-base font-bold text-white">Closed Trades History ({trades.length})</h3>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 flex items-center gap-1" title="Exness History Protection: All synced trades are permanently preserved in your local vault">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Permanent Vault
+            </span>
           </div>
 
           <div className="flex items-center gap-2">

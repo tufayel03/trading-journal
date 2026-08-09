@@ -413,10 +413,62 @@ function mt5SyncPlugin(): Plugin {
         res.end(JSON.stringify({ success: true, message: 'All trades & sync history wiped cleanly' }));
       };
 
+      const handleAccountToggleReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        let body = '';
+        req.on('data', (chunk: string) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const { login, action } = JSON.parse(body || '{}');
+            const loginKey = String(login);
+            if (loginKey && inMemoryStatus.accounts && inMemoryStatus.accounts[loginKey]) {
+              const acc = inMemoryStatus.accounts[loginKey];
+              if (action === 'disconnect') {
+                acc.status = 'disconnected';
+                acc.disconnectedAt = new Date().toISOString();
+                // Clear open positions for this disconnected account
+                inMemoryStatus.openPositions = (inMemoryStatus.openPositions || []).filter(
+                  (p: any) => String(p.accountLogin) !== loginKey
+                );
+              } else {
+                acc.status = 'connected';
+                delete acc.disconnectedAt;
+              }
+              try {
+                fs.writeFileSync(statusFile, JSON.stringify(inMemoryStatus, null, 2), 'utf-8');
+              } catch {}
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ 
+                success: true, 
+                message: `Account #${loginKey} ${action === 'disconnect' ? 'disconnected (trade history preserved in vault)' : 'reconnected'}`,
+                account: acc,
+                accounts: inMemoryStatus.accounts
+              }));
+              return;
+            }
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: 'Account not found' }));
+          } catch (err: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        });
+      };
+
       server.middlewares.use('/api/webhook/trade', handleWebhookReq);
       server.middlewares.use('/api/webhook/batch', handleWebhookReq);
       server.middlewares.use('/api/webhook/status', handleStatusReq);
       server.middlewares.use('/api/sync/clear', handleClearReq);
+      server.middlewares.use('/api/account/toggle', handleAccountToggleReq);
     }
   };
 }

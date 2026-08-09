@@ -35,6 +35,7 @@ interface TopBarProps {
   accounts?: AccountStatus[];
   selectedAccount?: string;
   onSelectAccount?: (login: string) => void;
+  onToggleAccountStatus?: (login: string, action: 'connect' | 'disconnect') => void;
   currentZoom?: ZoomLevel;
   onZoomChange?: (zoom: ZoomLevel) => void;
 }
@@ -54,6 +55,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   accounts = [],
   selectedAccount = 'ALL',
   onSelectAccount,
+  onToggleAccountStatus,
   currentZoom = 115,
   onZoomChange
 }) => {
@@ -113,11 +115,18 @@ export const TopBar: React.FC<TopBarProps> = ({
                 </>
               ) : (
                 <>
-                  <span className={`w-1.5 h-1.5 rounded-full ${isCentAccount ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    currentSelectedAccountObj?.status === 'disconnected' 
+                      ? 'bg-slate-400' 
+                      : (isCentAccount ? 'bg-amber-400' : 'bg-emerald-400')
+                  }`} />
                   <span className="font-bold text-[var(--text-primary)]">#{selectedAccount}</span>
                   <span className="text-[10px] text-[var(--text-muted)] hidden md:inline">
                     ({isCentAccount ? 'Cent USC' : (currentSelectedAccountObj?.server?.replace('Exness-', '') || 'USD')})
                   </span>
+                  {currentSelectedAccountObj?.status === 'disconnected' && (
+                    <span className="text-[9px] px-1 bg-slate-500/20 text-slate-400 rounded">Saved Vault</span>
+                  )}
                 </>
               )}
               <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />
@@ -127,10 +136,12 @@ export const TopBar: React.FC<TopBarProps> = ({
             {isAccountMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsAccountMenuOpen(false)} />
-                <div className="absolute left-0 mt-1 w-72 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl z-50 p-1.5 space-y-1">
-                  <div className="px-2 py-1 text-[10px] uppercase font-bold text-[var(--text-muted)] flex items-center justify-between border-b border-[var(--border-color)] pb-1">
-                    <span>Select Account</span>
-                    <Layers className="w-3 h-3 text-[var(--accent-gold)]" />
+                <div className="absolute left-0 mt-1 w-80 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl z-50 p-2 space-y-1.5">
+                  <div className="px-2 py-1 text-[10px] uppercase font-bold text-[var(--text-muted)] flex items-center justify-between border-b border-[var(--border-color)] pb-1.5">
+                    <span>Manage Accounts</span>
+                    <span className="text-[9px] text-emerald-400 font-normal flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> History Saved Forever
+                    </span>
                   </div>
 
                   <button
@@ -154,23 +165,38 @@ export const TopBar: React.FC<TopBarProps> = ({
                   {accounts.map(acc => {
                     const isAccCent = acc.isCent || acc.currency === 'USC' || String(acc.server).toLowerCase().includes('cent');
                     const isSelected = selectedAccount === String(acc.login);
+                    const isDisconnected = acc.status === 'disconnected';
+
                     return (
-                      <button
+                      <div
                         key={acc.login}
-                        onClick={() => {
-                          onSelectAccount?.(String(acc.login));
-                          setIsAccountMenuOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors ${
+                        className={`w-full px-2.5 py-2 rounded-lg text-xs flex items-center justify-between transition-colors border ${
                           isSelected
-                            ? (isAccCent ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300')
-                            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-white'
+                            ? (isAccCent ? 'bg-amber-500/15 border-amber-500/30' : 'bg-emerald-500/15 border-emerald-500/30')
+                            : 'border-transparent hover:bg-[var(--bg-card-hover)]'
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${isAccCent ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                        <div 
+                          className="flex items-center gap-2 flex-1 cursor-pointer"
+                          onClick={() => {
+                            onSelectAccount?.(String(acc.login));
+                            setIsAccountMenuOpen(false);
+                          }}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${
+                            isDisconnected ? 'bg-slate-500' : (isAccCent ? 'bg-amber-400' : 'bg-emerald-400')
+                          } ${!isDisconnected ? 'animate-pulse' : ''}`} />
                           <div>
-                            <div className="font-bold text-[var(--text-primary)]">Account #{acc.login}</div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-[var(--text-primary)]">Account #{acc.login}</span>
+                              <span className={`text-[9px] px-1 py-0.2 rounded font-bold ${
+                                isDisconnected 
+                                  ? 'bg-slate-500/20 text-slate-400 border border-slate-500/30' 
+                                  : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              }`}>
+                                {isDisconnected ? 'Disconnected (Saved)' : 'Connected'}
+                              </span>
+                            </div>
                             <div className="text-[10px] text-[var(--text-muted)]">
                               {isAccCent 
                                 ? `${(acc.equity || acc.balance || 0).toFixed(2)} USC (≈ $${(((acc.equity || acc.balance || 0) / 100)).toFixed(2)})`
@@ -178,22 +204,41 @@ export const TopBar: React.FC<TopBarProps> = ({
                             </div>
                           </div>
                         </div>
-                        {isSelected && <Check className={`w-3.5 h-3.5 ${isAccCent ? 'text-amber-400' : 'text-emerald-400'}`} />}
-                      </button>
+
+                        <div className="flex items-center gap-1 shrink-0 ml-2">
+                          {onToggleAccountStatus && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleAccountStatus(String(acc.login), isDisconnected ? 'connect' : 'disconnect');
+                              }}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                                isDisconnected 
+                                  ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30' 
+                                  : 'bg-slate-700/50 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-600'
+                              }`}
+                              title={isDisconnected ? 'Reconnect live MT5 sync' : 'Disconnect account (keeps all trade history saved)'}
+                            >
+                              {isDisconnected ? 'Reconnect' : 'Disconnect'}
+                            </button>
+                          )}
+                          {isSelected && <Check className={`w-3.5 h-3.5 ${isAccCent ? 'text-amber-400' : 'text-emerald-400'}`} />}
+                        </div>
+                      </div>
                     );
                   })}
 
-                  <div className="border-t border-[var(--border-color)] my-1" />
+                  <div className="border-t border-[var(--border-color)] my-1.5" />
 
                   <button
                     onClick={() => {
                       setIsAccountMenuOpen(false);
                       openMT5SyncModal();
                     }}
-                    className="w-full text-left px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--accent-gold)] hover:bg-[var(--accent-gold)]/10 flex items-center gap-1.5"
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-bold text-[var(--accent-gold)] hover:bg-[var(--accent-gold)]/10 flex items-center gap-1.5 transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Connect MT5 Account</span>
+                    <span>Connect Additional MT5 Account</span>
                   </button>
                 </div>
               </>

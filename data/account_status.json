@@ -1,5 +1,21 @@
 {
   "accounts": {
+    "160096169": {
+      "login": "160096169",
+      "server": "Exness-MT5Real20",
+      "balance": 504.8,
+      "equity": 504.8,
+      "margin": 0,
+      "freeMargin": 504.8,
+      "currency": "USC",
+      "lastUpdate": "2026-08-09T08:56:55.687Z",
+      "isCent": true,
+      "usdBalance": 5.05,
+      "usdEquity": 5.05,
+      "openPositionsCount": 0,
+      "status": "disconnected",
+      "disconnectedAt": "2026-08-09T08:56:56.286Z"
+    },
     "276133463": {
       "login": "276133463",
       "server": "Exness-MT5Real26",
@@ -16,18 +32,20 @@
     }
   },
   "account": {
-    "login": "276133463",
-    "server": "Exness-MT5Real26",
-    "balance": 297.78,
-    "equity": 300.61,
-    "margin": 14,
-    "freeMargin": 286.61,
-    "currency": "USD",
-    "lastUpdate": "2026-08-09T08:45:56.088Z",
-    "isCent": false,
-    "usdBalance": 297.78,
-    "usdEquity": 300.61,
-    "openPositionsCount": 3
+    "login": "160096169",
+    "server": "Exness-MT5Real20",
+    "balance": 504.8,
+    "equity": 504.8,
+    "margin": 0,
+    "freeMargin": 504.8,
+    "currency": "USC",
+    "lastUpdate": "2026-08-09T08:56:55.687Z",
+    "isCent": true,
+    "usdBalance": 5.05,
+    "usdEquity": 5.05,
+    "openPositionsCount": 0,
+    "status": "disconnected",
+    "disconnectedAt": "2026-08-09T08:56:56.286Z"
   },
   "openPositions": [
     {
@@ -82,6 +100,6 @@
       "nativeProfit": -1.94
     }
   ],
-  "totalSyncedDeals": 25,
-  "lastSync": "2026-08-09T08:45:56.088Z"
+  "totalSyncedDeals": 715,
+  "lastSync": "2026-08-09T08:56:55.687Z"
 }

@@ -547,6 +547,41 @@ export default function App() {
     setSettings(res.settings);
   };
 
+  const handleToggleAccountStatus = async (login: string, action: 'connect' | 'disconnect') => {
+    try {
+      const res = await fetch('/api/account/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login, action })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accounts) {
+          setAccountsMap(data.accounts);
+        }
+      }
+    } catch {}
+
+    setAccountsMap(prev => {
+      const copy = { ...prev };
+      if (copy[login]) {
+        copy[login] = {
+          ...copy[login],
+          status: action === 'disconnect' ? 'disconnected' : 'connected',
+          ...(action === 'disconnect' ? { disconnectedAt: new Date().toISOString() } : {})
+        };
+      }
+      return copy;
+    });
+
+    if (action === 'disconnect') {
+      setLiveSyncToast(`Account #${login} disconnected. All trade history remains saved safely in vault!`);
+    } else {
+      setLiveSyncToast(`Account #${login} reconnected to live auto sync!`);
+    }
+    setTimeout(() => setLiveSyncToast(null), 4500);
+  };
+
   return (
     <div className="flex h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)] font-sans overflow-hidden transition-colors duration-300">
       
@@ -664,6 +699,7 @@ export default function App() {
             setSelectedAccount(accId);
             setFilters(prev => ({ ...prev, account: accId }));
           }}
+          onToggleAccountStatus={handleToggleAccountStatus}
           currentZoom={currentZoom}
           onZoomChange={setCurrentZoom}
         />
@@ -786,6 +822,7 @@ export default function App() {
         accountStatus={accountStatus}
         accounts={accountsList}
         onClearAll={handleClearAllTrades}
+        onToggleAccountStatus={handleToggleAccountStatus}
       />
 
       <SettingsModal
