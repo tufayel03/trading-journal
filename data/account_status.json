@@ -4,14 +4,14 @@
       "login": "276133463",
       "server": "Exness-MT5Real26",
       "balance": 297.78,
-      "equity": 300.88,
+      "equity": 300.85,
       "margin": 14,
-      "freeMargin": 286.88,
+      "freeMargin": 286.85,
       "currency": "USD",
-      "lastUpdate": "2026-08-09T08:40:39.225Z",
+      "lastUpdate": "2026-08-09T08:42:57.443Z",
       "isCent": false,
       "usdBalance": 297.78,
-      "usdEquity": 300.88,
+      "usdEquity": 300.85,
       "openPositionsCount": 3
     }
   },
@@ -19,14 +19,14 @@
     "login": "276133463",
     "server": "Exness-MT5Real26",
     "balance": 297.78,
-    "equity": 300.88,
+    "equity": 300.85,
     "margin": 14,
-    "freeMargin": 286.88,
+    "freeMargin": 286.85,
     "currency": "USD",
-    "lastUpdate": "2026-08-09T08:40:39.225Z",
+    "lastUpdate": "2026-08-09T08:42:57.443Z",
     "isCent": false,
     "usdBalance": 297.78,
-    "usdEquity": 300.88,
+    "usdEquity": 300.85,
     "openPositionsCount": 3
   },
   "openPositions": [
@@ -53,16 +53,16 @@
       "direction": "BUY",
       "lotSize": 0.01,
       "openPrice": 64887.8,
-      "currentPrice": 64783.78,
+      "currentPrice": 64780.78,
       "stopLoss": 0,
       "takeProfit": 100000,
-      "profit": -1.04,
+      "profit": -1.07,
       "openTime": "2026-08-05T19:52:56.000Z",
       "accountLogin": "276133463",
       "accountServer": "Exness-MT5Real26",
       "accountCurrency": "USD",
       "isCent": false,
-      "nativeProfit": -1.04
+      "nativeProfit": -1.07
     },
     {
       "ticket": "794576824",
@@ -83,5 +83,5 @@
     }
   ],
   "totalSyncedDeals": 715,
-  "lastSync": "2026-08-09T08:40:39.225Z"
+  "lastSync": "2026-08-09T08:42:57.443Z"
 }

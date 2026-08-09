@@ -88,14 +88,23 @@ export default function App() {
   // Purge any legacy dummy mock trades and deduplicate on mount
   useEffect(() => {
     setTrades(current => {
-      const cleaned = current.filter(t => 
-        t && t.id && 
-        !t.id.startsWith('trd-100') && 
-        !t.id.startsWith('mt5-78906863') && 
-        !t.id.startsWith('mt5-78190382') &&
-        t.accountLogin !== '160096169' &&
-        !t.notes?.includes('Live Auto-Sync Verification Test Trade')
-      );
+      const cleaned = current.filter(t => {
+        if (!t || !t.id) return false;
+        
+        // Remove old manual mock trades starting with 'trd-'
+        if (t.id.startsWith('trd-')) return false;
+        
+        // Remove test verification trades
+        if (t.notes?.includes('Live Auto-Sync Verification Test Trade')) return false;
+        
+        // If it has an account login, it MUST be the user's active account
+        if (t.accountLogin && t.accountLogin !== '276133463') return false;
+        
+        // If it is an auto-sync trade, it must belong to the active account
+        if (t.strategy === 'HyperTrade MT5 Auto Sync' && t.accountLogin !== '276133463') return false;
+
+        return true;
+      });
       const deduped = deduplicateTrades(cleaned);
       if (deduped.length !== current.length) {
         saveTrades(deduped);
