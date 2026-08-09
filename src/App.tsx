@@ -93,6 +93,7 @@ export default function App() {
         !t.id.startsWith('trd-100') && 
         !t.id.startsWith('mt5-78906863') && 
         !t.id.startsWith('mt5-78190382') &&
+        t.accountLogin !== '160096169' &&
         !t.notes?.includes('Live Auto-Sync Verification Test Trade')
       );
       const deduped = deduplicateTrades(cleaned);
