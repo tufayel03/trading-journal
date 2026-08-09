@@ -94,23 +94,20 @@ export default function App() {
         // Remove old manual mock trades starting with 'trd-'
         if (t.id.startsWith('trd-')) return false;
         
+        // Remove demo account 160096169 trades
+        if (String(t.accountLogin) === '160096169' || String(t.id).startsWith('mt5-160096169')) return false;
+
         // Remove test verification trades
         if (t.notes?.includes('Live Auto-Sync Verification Test Trade')) return false;
         
-        // If it has an account login, it MUST be the user's active account
-        if (t.accountLogin && t.accountLogin !== '276133463') return false;
-        
-        // If it is an auto-sync trade, it must belong to the active account
-        if (t.strategy === 'HyperTrade MT5 Auto Sync' && t.accountLogin !== '276133463') return false;
+        // Ensure trade has a real ticket or belongs to real user account
+        if (String(t.accountLogin) !== '276133463' && (!t.ticket || String(t.ticket).length < 5)) return false;
 
         return true;
       });
       const deduped = deduplicateTrades(cleaned);
-      if (deduped.length !== current.length) {
-        saveTrades(deduped);
-        return deduped;
-      }
-      return current;
+      saveTrades(deduped);
+      return deduped;
     });
   }, []);
 
@@ -154,9 +151,18 @@ export default function App() {
           if (Array.isArray(syncedTrades)) {
             setTrades(current => {
               let changed = false;
-              let merged = [...current];
+              // Clean current of any corrupted mock/demo items
+              const cleanedCurrent = current.filter(t => 
+                t && t.id && 
+                !t.id.startsWith('trd-') && 
+                String(t.accountLogin) !== '160096169' && 
+                !String(t.id).startsWith('mt5-160096169') &&
+                (String(t.accountLogin) === '276133463' || (t.ticket && String(t.ticket).length >= 5))
+              );
+              let merged = [...cleanedCurrent];
 
               syncedTrades.forEach(st => {
+                if (String(st.accountLogin) === '160096169' || String(st.id).startsWith('mt5-160096169')) return;
                 const stTicket = st.ticket ? String(st.ticket).trim() : null;
                 const stId = st.id ? String(st.id).trim() : null;
 
@@ -349,6 +355,11 @@ export default function App() {
     return list;
   }, [accountsMap, accountStatus]);
 
+  const activeAccountLogins = useMemo(() => {
+    const active = accountsList.filter(a => a.status !== 'archived');
+    return new Set(active.map(a => String(a.login)));
+  }, [accountsList]);
+
   // Main Trade Filter Engine
   const filteredTrades = useMemo(() => {
     if (!Array.isArray(trades)) return [];
@@ -356,11 +367,17 @@ export default function App() {
       if (!t) return false;
       const cTime = t.closeTime || t.openTime || new Date().toISOString();
 
-      // Account Filter (Individual Account or All Combined)
+      // Account Filter (Individual Account or All Combined Active)
       const activeAccount = filters.account || selectedAccount;
       if (activeAccount && activeAccount !== 'ALL') {
         const tradeAccount = t.accountLogin || '276133463';
         if (String(tradeAccount) !== String(activeAccount)) {
+          return false;
+        }
+      } else {
+        // If ALL is selected, only show trades belonging to active (non-archived) accounts
+        const tradeAccount = String(t.accountLogin || '276133463');
+        if (activeAccountLogins.size > 0 && !activeAccountLogins.has(tradeAccount)) {
           return false;
         }
       }
@@ -435,7 +452,7 @@ export default function App() {
 
       return true;
     });
-  }, [trades, filters, selectedAccount, selectedCalendarDate]);
+  }, [trades, filters, selectedAccount, selectedCalendarDate, activeAccountLogins]);
 
   // Open Positions filtered by selected account
   const filteredOpenPositions = useMemo(() => {
@@ -447,9 +464,14 @@ export default function App() {
   // Active account trades for equity and profit computation
   const activeAccountTrades = useMemo(() => {
     const activeAccount = filters.account || selectedAccount;
-    if (activeAccount === 'ALL') return trades;
-    return trades.filter(t => String(t.accountLogin || '276133463') === String(activeAccount));
-  }, [trades, filters.account, selectedAccount]);
+    if (activeAccount && activeAccount !== 'ALL') {
+      return trades.filter(t => String(t.accountLogin || '276133463') === String(activeAccount));
+    }
+    return trades.filter(t => {
+      const tradeAccount = String(t.accountLogin || '276133463');
+      return activeAccountLogins.size === 0 || activeAccountLogins.has(tradeAccount);
+    });
+  }, [trades, filters.account, selectedAccount, activeAccountLogins]);
 
   // Overall Net Profit for selected account (or all accounts combined)
   const overallNetProfit = useMemo(() => {

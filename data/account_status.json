@@ -8,7 +8,7 @@
       "margin": 14,
       "freeMargin": 286.61,
       "currency": "USD",
-      "lastUpdate": "2026-08-09T09:16:50.000Z",
+      "lastUpdate": "2026-08-09T08:45:56.088Z",
       "isCent": false,
       "usdBalance": 297.78,
       "usdEquity": 300.61,
@@ -24,7 +24,7 @@
     "margin": 14,
     "freeMargin": 286.61,
     "currency": "USD",
-    "lastUpdate": "2026-08-09T09:16:50.000Z",
+    "lastUpdate": "2026-08-09T08:45:56.088Z",
     "isCent": false,
     "usdBalance": 297.78,
     "usdEquity": 300.61,
@@ -32,7 +32,9 @@
     "status": "connected"
   },
   "openPositions": [],
-  "totalSyncedDeals": 25,
-  "lastSync": "2026-08-09T09:16:50.000Z",
-  "removedAccounts": ["160096169"]
+  "totalSyncedDeals": 715,
+  "lastSync": "2026-08-09T09:14:37.366Z",
+  "removedAccounts": [
+    "160096169"
+  ]
 }
