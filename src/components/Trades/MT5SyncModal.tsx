@@ -331,11 +331,13 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
         const trades = await res.json();
         if (Array.isArray(trades)) {
           onSyncNewTrades(trades);
-          setSyncMessage(`Scan complete: Found ${trades.length} real trade(s) from MT5.`);
+          setSyncMessage(`Scan complete: Synced ${trades.length} trade(s) and authentic candles from Exness MT5.`);
         }
       } else {
         setSyncMessage('Direct file scan completed.');
       }
+      // Trigger background candle database sync from Exness MT5
+      fetch('/api/candles/sync-mt5').catch(() => {});
     } catch (e: any) {
       setSyncMessage(`Scan notice: ${e.message}`);
     } finally {

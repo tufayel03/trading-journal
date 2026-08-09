@@ -12,7 +12,8 @@ import {
   BarChart2, 
   FileText,
   Upload,
-  Maximize2
+  Maximize2,
+  Play
 } from 'lucide-react';
 import { Trade } from '../../types';
 
@@ -20,20 +21,24 @@ interface TradeDetailModalProps {
   trade: Trade | null;
   onClose: () => void;
   onUpdateTrade: (updatedTrade: Trade) => void;
+  onReplayTrade?: (trade: Trade) => void;
 }
 
 export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
   trade,
   onClose,
-  onUpdateTrade
+  onUpdateTrade,
+  onReplayTrade
 }) => {
   if (!trade) return null;
 
   const [activeTab, setActiveTab] = useState<'overview' | 'confluences' | 'psychology' | 'charts'>('overview');
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-  const isWin = trade.netProfit >= 0.5;
-  const isLoss = trade.netProfit <= -0.5;
+  const isWin = trade.netProfit > 0;
+  const isLoss = trade.netProfit < 0;
+  const isCent = trade.isCent || trade.accountCurrency === 'USC';
+  const displayProfit = isCent ? trade.netProfit * 100 : trade.netProfit;
 
   const handleBeforeChartUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,9 +97,23 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
             <div className="text-right">
               <span className="text-[10px] text-gray-400 uppercase tracking-wider block">Net Profit</span>
               <span className={`text-xl font-mono font-extrabold ${isWin ? 'text-emerald-400' : isLoss ? 'text-rose-400' : 'text-gray-300'}`}>
-                {isWin ? '+' : ''}${trade.netProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {isWin ? '+' : ''}{isCent ? `${displayProfit.toFixed(2)} USC` : `$${displayProfit.toFixed(2)}`}
               </span>
             </div>
+
+            {onReplayTrade && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onReplayTrade(trade);
+                }}
+                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition-all"
+                title="Launch Trade Replay on TradingView Chart"
+              >
+                <Play className="w-3.5 h-3.5 fill-black" />
+                <span>Replay Trade</span>
+              </button>
+            )}
 
             <button
               onClick={onClose}

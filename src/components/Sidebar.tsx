@@ -16,13 +16,14 @@ import {
   ShieldAlert,
   PanelLeftClose,
   PanelLeftOpen,
-  Zap
+  Zap,
+  Video
 } from 'lucide-react';
 import { UserSettings, AccountStatus } from '../types';
 
 interface SidebarProps {
-  activeTab: 'dashboard' | 'trades' | 'psychology' | 'playbook';
-  setActiveTab: (tab: 'dashboard' | 'trades' | 'psychology' | 'playbook') => void;
+  activeTab: 'dashboard' | 'trades' | 'replay' | 'psychology' | 'playbook';
+  setActiveTab: (tab: 'dashboard' | 'trades' | 'replay' | 'psychology' | 'playbook') => void;
   settings: UserSettings;
   netProfit: number;
   openManualModal: () => void;
@@ -55,24 +56,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   accounts = [],
   selectedAccount = 'ALL'
 }) => {
-  const currentSelectedAccountObj = accounts.find(a => String(a.login) === selectedAccount);
+  const currentSelectedAccountObj = selectedAccount !== 'ALL' 
+    ? accounts.find(a => String(a.login) === selectedAccount) || accountStatus
+    : accountStatus;
+
   const isCentAccount = selectedAccount !== 'ALL' && (currentSelectedAccountObj?.isCent || currentSelectedAccountObj?.currency === 'USC');
 
   const liveEquity = selectedAccount === 'ALL'
     ? (accounts.length > 0 
         ? accounts.reduce((sum, a) => sum + (a.usdEquity || (a.isCent || a.currency === 'USC' ? (a.equity / 100) : a.equity) || (a.isCent || a.currency === 'USC' ? (a.balance / 100) : a.balance) || 0), 0)
         : (accountStatus?.equity !== undefined ? (accountStatus.isCent || accountStatus.currency === 'USC' ? accountStatus.equity / 100 : accountStatus.equity) : (settings.initialBalance + netProfit)))
-    : (currentSelectedAccountObj?.equity !== undefined 
-        ? currentSelectedAccountObj.equity 
-        : (accountStatus?.equity !== undefined ? accountStatus.equity : (settings.initialBalance + netProfit)));
+    : (currentSelectedAccountObj 
+        ? (isCentAccount ? currentSelectedAccountObj.equity : (currentSelectedAccountObj.usdEquity || currentSelectedAccountObj.equity))
+        : (settings.initialBalance + netProfit));
 
   const startingCapital = selectedAccount === 'ALL'
-    ? (accounts.length > 0
+    ? (accounts.length > 0 
         ? Math.max(0, Number((accounts.reduce((sum, a) => sum + (a.usdBalance || (a.isCent || a.currency === 'USC' ? (a.balance / 100) : a.balance) || 0), 0) - netProfit).toFixed(2)))
         : (accountStatus?.balance !== undefined ? Math.max(0, Number(((accountStatus.isCent || accountStatus.currency === 'USC' ? accountStatus.balance / 100 : accountStatus.balance) - netProfit).toFixed(2))) : settings.initialBalance))
-    : (currentSelectedAccountObj?.balance !== undefined 
+    : (currentSelectedAccountObj 
         ? Math.max(0, Number((currentSelectedAccountObj.balance - (isCentAccount ? netProfit * 100 : netProfit)).toFixed(2))) 
-        : (accountStatus?.balance !== undefined ? Math.max(0, Number((accountStatus.balance - netProfit).toFixed(2))) : settings.initialBalance));
+        : settings.initialBalance);
 
   const displayProfit = isCentAccount ? (netProfit * 100) : netProfit;
   const isPositive = netProfit >= 0;
@@ -91,6 +95,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Trade Log',
       icon: TrendingUp,
       badge: null
+    },
+    {
+      id: 'replay',
+      label: 'Trade Replay Studio',
+      shortLabel: 'Replay',
+      icon: Video,
+      badge: 'PRO'
     },
     {
       id: 'psychology',

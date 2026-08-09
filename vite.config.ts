@@ -2,6 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import { defineConfig, Plugin } from 'vite';
 
 function mt5SyncPlugin(): Plugin {
@@ -61,17 +62,18 @@ function mt5SyncPlugin(): Plugin {
         const openTime = trade.openTime || new Date(Date.now() - 3600000).toISOString();
         const closeTime = trade.closeTime || new Date().toISOString();
 
-        const accountLogin = trade.accountLogin ? String(trade.accountLogin) : (defaultAccount?.login ? String(defaultAccount.login) : '276133463');
-        if (accountLogin === '160096169') {
-          return null;
-        }
+        const accountLogin = trade.accountLogin 
+          ? String(trade.accountLogin) 
+          : (defaultAccount?.login ? String(defaultAccount.login) : '');
 
         const accountServer = trade.accountServer || (defaultAccount?.server ? String(defaultAccount.server) : 'Live MT5');
         const accountCurrency = String(trade.accountCurrency || defaultAccount?.currency || 'USD').toUpperCase();
 
         const isCent = accountCurrency === 'USC' || 
                        accountCurrency.includes('CENT') || 
-                       accountServer.toLowerCase().includes('cent');
+                       accountServer.toLowerCase().includes('cent') ||
+                       Boolean(defaultAccount?.isCent) ||
+                       Boolean(trade?.isCent);
         const conversionRate = isCent ? 0.01 : 1.0;
 
         const rawProfit = parseFloat(trade.profit || trade.netProfit || 0);
@@ -304,7 +306,8 @@ function mt5SyncPlugin(): Plugin {
         if (fs.existsSync(mt5Base)) {
           const dirs = fs.readdirSync(mt5Base);
           for (const dir of dirs) {
-            const directSync = path.join(mt5Base, dir, 'MQL5', 'Files', 'journal_sync.json');
+            const filesDir = path.join(mt5Base, dir, 'MQL5', 'Files');
+            const directSync = path.join(filesDir, 'journal_sync.json');
             if (fs.existsSync(directSync)) {
               try {
                 const content = fs.readFileSync(directSync, 'utf-8');
@@ -312,6 +315,22 @@ function mt5SyncPlugin(): Plugin {
                   terminalFileHashes[dir] = content;
                   const raw = JSON.parse(content);
                   processSyncBundle(raw);
+                }
+              } catch {}
+            }
+
+            // Ingest any direct candle export files from MT5 EA
+            if (fs.existsSync(filesDir)) {
+              try {
+                const candleFiles = fs.readdirSync(filesDir).filter(f => f.startsWith('candles_') && f.endsWith('.json'));
+                for (const cf of candleFiles) {
+                  const src = path.join(filesDir, cf);
+                  const destName = cf.replace(/^candles_/, '');
+                  const dest = path.join(candlesDir, destName);
+                  const candleContent = fs.readFileSync(src, 'utf-8');
+                  if (candleContent && candleContent.length > 50) {
+                    fs.writeFileSync(dest, candleContent, 'utf-8');
+                  }
                 }
               } catch {}
             }
@@ -636,6 +655,175 @@ function mt5SyncPlugin(): Plugin {
         });
       };
 
+      const candlesDir = path.resolve(dataDir, 'candles');
+      if (!fs.existsSync(candlesDir)) {
+        fs.mkdirSync(candlesDir, { recursive: true });
+      }
+
+      const cleanSymbolName = (sym: string): string => {
+        return String(sym || 'XAUUSD').replace(/(\.m|_m|ecn|#|c|m)$/i, '').toUpperCase().trim();
+      };
+
+      const fetchMT5CandlesLive = (symbol: string, timeframe: string, fromSec: number, toSec: number, count: number = 50000) => {
+        try {
+          const scriptPath = path.resolve(__dirname, 'scripts', 'fetch_mt5_candles.py');
+          const cleanSym = cleanSymbolName(symbol);
+          const tf = timeframe.toLowerCase();
+          const cmd = `python "${scriptPath}" --symbol "${cleanSym}" --timeframe "${tf}" --from ${fromSec} --to ${toSec} --count ${count}`;
+          execSync(cmd, { cwd: __dirname, timeout: 25000, stdio: 'pipe' });
+        } catch (err: any) {
+          // MT5 might not be running or symbols already fetched
+        }
+      };
+
+      const normalizeTfKey = (tf: string): string => {
+        const raw = String(tf || '5m').trim();
+        const lower = raw.toLowerCase();
+        if (raw === '1M' || lower === '1mn' || lower === 'mn1' || lower === 'monthly') return '1mn';
+        if (lower === '1w' || lower === 'w1') return '1w';
+        if (lower === '1d' || lower === 'd1') return '1d';
+        if (lower === '4h' || lower === 'h4') return '4h';
+        if (lower === '1h' || lower === 'h1') return '1h';
+        if (lower === '30m') return '30m';
+        if (lower === '15m') return '15m';
+        if (lower === '1m') return '1m';
+        return '5m';
+      };
+
+      const handleCandlesReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk: string) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              const { symbol, timeframe, candles } = JSON.parse(body || '{}');
+              if (symbol && Array.isArray(candles)) {
+                const normSym = cleanSymbolName(symbol);
+                const tf = normalizeTfKey(timeframe);
+                const file = path.resolve(candlesDir, `${normSym}_${tf}.json`);
+                
+                let existing: any[] = [];
+                if (fs.existsSync(file)) {
+                  try { existing = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch {}
+                }
+                
+                const combinedMap = new Map<number, any>();
+                existing.forEach(c => combinedMap.set(c.time, c));
+                candles.forEach(c => combinedMap.set(c.time, c));
+
+                const sorted = Array.from(combinedMap.values()).sort((a, b) => a.time - b.time);
+                fs.writeFileSync(file, JSON.stringify(sorted, null, 2), 'utf-8');
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, count: sorted.length }));
+                return;
+              }
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: 'Invalid payload' }));
+            } catch (err: any) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
+        if (req.method === 'GET') {
+          try {
+            const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost:3000'}`);
+            const symbol = cleanSymbolName(urlObj.searchParams.get('symbol') || 'XAUUSD');
+            const rawTf = urlObj.searchParams.get('timeframe') || '5m';
+            const timeframe = normalizeTfKey(rawTf);
+            const from = parseInt(urlObj.searchParams.get('from') || '0', 10);
+            const to = parseInt(urlObj.searchParams.get('to') || '0', 10);
+            const forceFetch = urlObj.searchParams.get('force') === 'true';
+            const returnAll = urlObj.searchParams.get('all') === 'true';
+
+            const file = path.resolve(candlesDir, `${symbol}_${timeframe}.json`);
+            let savedCandles: any[] = [];
+            if (fs.existsSync(file)) {
+              try {
+                savedCandles = JSON.parse(fs.readFileSync(file, 'utf-8'));
+              } catch {}
+            }
+
+            // If we have no candles or user specifically requested force fetch (or backward scroll beyond our oldest bar)
+            const oldestSavedTime = savedCandles.length > 0 ? savedCandles[0].time : 0;
+            const needsBackwardFetch = (to > 0 && to <= oldestSavedTime) || savedCandles.length < 50 || forceFetch;
+
+            if (needsBackwardFetch) {
+              fetchMT5CandlesLive(symbol, timeframe, from, to, 50000);
+              if (fs.existsSync(file)) {
+                try {
+                  savedCandles = JSON.parse(fs.readFileSync(file, 'utf-8'));
+                } catch {}
+              }
+            }
+
+            let resultCandles = savedCandles;
+
+            // If range requested and not returnAll
+            if (!returnAll && (from > 0 || to > 0)) {
+              const reqFrom = from > 0 ? from : 0;
+              const reqTo = to > 0 ? to : Math.floor(Date.now() / 1000) + 86400;
+              const filtered = savedCandles.filter(c => c.time >= reqFrom && c.time <= reqTo);
+              if (filtered.length >= 10) {
+                resultCandles = filtered;
+              }
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              symbol,
+              timeframe,
+              candles: resultCandles,
+              count: resultCandles.length,
+              source: 'exness_mt5_database'
+            }));
+          } catch (err: any) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        }
+      };
+
+      const handleCandlesSyncReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        try {
+          const scriptPath = path.resolve(__dirname, 'scripts', 'fetch_mt5_candles.py');
+          const output = execSync(`python "${scriptPath}" --all-trades --json`, {
+            cwd: __dirname,
+            timeout: 60000,
+            encoding: 'utf-8'
+          });
+          const parsed = JSON.parse(output || '{}');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(parsed));
+        } catch (err: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      };
+
       server.middlewares.use('/api/webhook/trade', handleWebhookReq);
       server.middlewares.use('/api/webhook/batch', handleWebhookReq);
       server.middlewares.use('/api/webhook/status', handleStatusReq);
@@ -644,6 +832,8 @@ function mt5SyncPlugin(): Plugin {
       server.middlewares.use('/api/account/remove', handleAccountRemoveReq);
       server.middlewares.use('/api/account/add', handleAccountAddReq);
       server.middlewares.use('/api/account/restore', handleAccountAddReq);
+      server.middlewares.use('/api/candles/sync-mt5', handleCandlesSyncReq);
+      server.middlewares.use('/api/candles', handleCandlesReq);
     }
   };
 }

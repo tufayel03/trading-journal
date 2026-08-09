@@ -36,7 +36,7 @@ export const PsychologyDashboard: React.FC<PsychologyDashboardProps> = ({ trades
       const emoTrades = trades.filter(t => t.emotions === emo);
       const count = emoTrades.length;
       const netProfit = emoTrades.reduce((sum, t) => sum + t.netProfit, 0);
-      const wins = emoTrades.filter(t => t.netProfit > 0.5).length;
+      const wins = emoTrades.filter(t => t.netProfit > 0).length;
       const winRate = count > 0 ? (wins / count) * 100 : 0;
 
       return {
@@ -55,7 +55,7 @@ export const PsychologyDashboard: React.FC<PsychologyDashboardProps> = ({ trades
       const starTrades = trades.filter(t => t.rating === star);
       const count = starTrades.length;
       const netProfit = starTrades.reduce((sum, t) => sum + t.netProfit, 0);
-      const wins = starTrades.filter(t => t.netProfit > 0.5).length;
+      const wins = starTrades.filter(t => t.netProfit > 0).length;
       const winRate = count > 0 ? (wins / count) * 100 : 0;
 
       return {
@@ -70,7 +70,7 @@ export const PsychologyDashboard: React.FC<PsychologyDashboardProps> = ({ trades
   const cleanTradesCount = cleanTrades.length;
   const cleanTradesProfit = cleanTrades.reduce((sum, t) => sum + t.netProfit, 0);
   const cleanWinRate = cleanTradesCount > 0 
-    ? (cleanTrades.filter(t => t.netProfit > 0.5).length / cleanTradesCount) * 100 
+    ? (cleanTrades.filter(t => t.netProfit > 0).length / cleanTradesCount) * 100 
     : 0;
 
   return (

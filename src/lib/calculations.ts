@@ -151,10 +151,10 @@ export function calculateKPIStats(trades: Trade[], initialBalance: number = 1000
     totalSwap += t.swap || 0;
     totalPips += t.pips || 0;
 
-    if (t.netProfit > 0.5) {
+    if (t.netProfit > 0) {
       wins++;
       grossProfit += t.netProfit;
-    } else if (t.netProfit < -0.5) {
+    } else if (t.netProfit < 0) {
       losses++;
       grossLoss += Math.abs(t.netProfit);
       
@@ -259,8 +259,8 @@ export function aggregateDailyPnL(trades: Trade[]): Map<string, DailyPnL> {
 
     existing.netProfit += t.netProfit;
     existing.tradesCount += 1;
-    if (t.netProfit > 0.5) existing.winsCount += 1;
-    else if (t.netProfit < -0.5) existing.lossesCount += 1;
+    if (t.netProfit > 0) existing.winsCount += 1;
+    else if (t.netProfit < 0) existing.lossesCount += 1;
 
     existing.winRate = existing.tradesCount > 0 
       ? (existing.winsCount / existing.tradesCount) * 100 
@@ -320,7 +320,7 @@ export function aggregateBySession(trades: Trade[]): SessionSummary[] {
     const sessionTrades = trades.filter(t => t.session === s.key);
     const count = sessionTrades.length;
     const netProfit = sessionTrades.reduce((sum, t) => sum + t.netProfit, 0);
-    const wins = sessionTrades.filter(t => t.netProfit > 0.5).length;
+    const wins = sessionTrades.filter(t => t.netProfit > 0).length;
     const winRate = count > 0 ? (wins / count) * 100 : 0;
 
     return {
@@ -344,7 +344,7 @@ export function aggregateBySymbol(trades: Trade[]): SymbolSummary[] {
     const existing = map.get(norm) || { count: 0, netProfit: 0, wins: 0 };
     existing.count += 1;
     existing.netProfit += t.netProfit;
-    if (t.netProfit > 0.5) existing.wins += 1;
+    if (t.netProfit > 0) existing.wins += 1;
     map.set(norm, existing);
   });
 
@@ -372,10 +372,10 @@ export function aggregateByStrategy(trades: Trade[]): StrategySummary[] {
     const existing = map.get(strat) || { count: 0, netProfit: 0, wins: 0, grossProfit: 0, grossLoss: 0, totalR: 0, rCount: 0 };
     existing.count += 1;
     existing.netProfit += t.netProfit;
-    if (t.netProfit > 0.5) {
+    if (t.netProfit > 0) {
       existing.wins += 1;
       existing.grossProfit += t.netProfit;
-    } else if (t.netProfit < -0.5) {
+    } else if (t.netProfit < 0) {
       existing.grossLoss += Math.abs(t.netProfit);
     }
 

@@ -93,7 +93,7 @@ export const PlaybookView: React.FC<PlaybookViewProps> = ({
           // Calculate live win rate for this strategy from real trades
           const matchingTrades = trades.filter(t => t.strategy === setup.strategyName);
           const totalMatching = matchingTrades.length;
-          const winsMatching = matchingTrades.filter(t => t.netProfit > 0.5).length;
+          const winsMatching = matchingTrades.filter(t => t.netProfit > 0).length;
           const liveWinRate = totalMatching > 0 ? ((winsMatching / totalMatching) * 100).toFixed(1) : 'N/A';
           const livePnL = matchingTrades.reduce((sum, t) => sum + t.netProfit, 0);
 

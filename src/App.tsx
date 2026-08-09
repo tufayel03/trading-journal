@@ -13,6 +13,8 @@ import { TradeDetailModal } from './components/Trades/TradeDetailModal';
 import { ManualTradeModal } from './components/Trades/ManualTradeModal';
 import { CSVImporterModal } from './components/Trades/CSVImporterModal';
 import { MT5SyncModal } from './components/Trades/MT5SyncModal';
+import { TradeReplayModal } from './components/Replay/TradeReplayModal';
+import { TradeReplayView } from './components/Replay/TradeReplayView';
 import { PsychologyDashboard } from './components/Psychology/PsychologyDashboard';
 import { PlaybookView } from './components/Playbook/PlaybookView';
 import { SettingsModal } from './components/Settings/SettingsModal';
@@ -93,9 +95,6 @@ export default function App() {
         
         // Remove old manual mock trades starting with 'trd-'
         if (t.id.startsWith('trd-')) return false;
-        
-        // Remove demo account 160096169 trades
-        if (String(t.accountLogin) === '160096169') return false;
 
         // Remove test verification trades
         if (t.notes?.includes('Live Auto-Sync Verification Test Trade')) return false;
@@ -112,15 +111,14 @@ export default function App() {
       .then(res => res.json())
       .then((serverTrades: Trade[]) => {
         if (Array.isArray(serverTrades) && serverTrades.length > 0) {
-          const valid = serverTrades.filter(t => String(t.accountLogin) !== '160096169');
-          setTrades(valid);
-          saveTrades(valid);
+          setTrades(serverTrades);
+          saveTrades(serverTrades);
         }
       })
       .catch(() => {});
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'trades' | 'psychology' | 'playbook'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'trades' | 'replay' | 'psychology' | 'playbook'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
@@ -141,6 +139,8 @@ export default function App() {
 
   // Modals state
   const [selectedTradeForDetail, setSelectedTradeForDetail] = useState<Trade | null>(null);
+  const [selectedTradeForReplay, setSelectedTradeForReplay] = useState<Trade | null>(null);
+  const [isReplayModalOpen, setIsReplayModalOpen] = useState<boolean>(false);
   const [tradeToEdit, setTradeToEdit] = useState<Trade | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
@@ -148,6 +148,11 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [liveSyncToast, setLiveSyncToast] = useState<string | null>(null);
+
+  const handleLaunchReplay = (trade: Trade) => {
+    setSelectedTradeForReplay(trade);
+    setIsReplayModalOpen(true);
+  };
 
   // Auto-sync polling: Fetches real trades and live account status from MT5
   useEffect(() => {
@@ -160,16 +165,14 @@ export default function App() {
           if (Array.isArray(syncedTrades)) {
             setTrades(current => {
               let changed = false;
-              // Clean current of any corrupted mock/demo items
+              // Clean current of any corrupted mock items
               const cleanedCurrent = current.filter(t => 
                 t && t.id && 
-                !t.id.startsWith('trd-') && 
-                String(t.accountLogin) !== '160096169'
+                !t.id.startsWith('trd-')
               );
               let merged = [...cleanedCurrent];
 
               syncedTrades.forEach(st => {
-                if (String(st.accountLogin) === '160096169') return;
                 const stTicket = st.ticket ? String(st.ticket).trim() : null;
                 const stId = st.id ? String(st.id).trim() : null;
 
@@ -297,11 +300,15 @@ export default function App() {
       } else if (e.key === '2') {
         setActiveTab('trades');
       } else if (e.key === '3') {
-        setActiveTab('psychology');
+        setActiveTab('replay');
       } else if (e.key === '4') {
+        setActiveTab('psychology');
+      } else if (e.key === '5') {
         setActiveTab('playbook');
       } else if (e.key === 'Escape') {
         setSelectedTradeForDetail(null);
+        setSelectedTradeForReplay(null);
+        setIsReplayModalOpen(false);
         setTradeToEdit(null);
         setIsManualModalOpen(false);
         setIsImportModalOpen(false);
@@ -377,14 +384,14 @@ export default function App() {
       // Account Filter (Individual Account or All Combined Active)
       const activeAccount = filters.account || selectedAccount;
       if (activeAccount && activeAccount !== 'ALL') {
-        const tradeAccount = t.accountLogin || '276133463';
-        if (String(tradeAccount) !== String(activeAccount)) {
+        const tradeAccount = t.accountLogin ? String(t.accountLogin) : '';
+        if (tradeAccount && String(tradeAccount) !== String(activeAccount)) {
           return false;
         }
       } else {
         // If ALL is selected, only show trades belonging to active (non-archived) accounts
-        const tradeAccount = String(t.accountLogin || '276133463');
-        if (activeAccountLogins.size > 0 && !activeAccountLogins.has(tradeAccount)) {
+        const tradeAccount = t.accountLogin ? String(t.accountLogin) : '';
+        if (activeAccountLogins.size > 0 && tradeAccount && !activeAccountLogins.has(tradeAccount)) {
           return false;
         }
       }
@@ -442,9 +449,9 @@ export default function App() {
       // Outcome
       if (filters.outcome !== 'ALL') {
         const profit = t.netProfit || 0;
-        if (filters.outcome === 'WIN' && profit <= 0.5) return false;
-        if (filters.outcome === 'LOSS' && profit >= -0.5) return false;
-        if (filters.outcome === 'BREAK_EVEN' && (profit > 0.5 || profit < -0.5)) return false;
+        if (filters.outcome === 'WIN' && profit <= 0) return false;
+        if (filters.outcome === 'LOSS' && profit >= 0) return false;
+        if (filters.outcome === 'BREAK_EVEN' && profit !== 0) return false;
       }
 
       // Search Query
@@ -465,18 +472,18 @@ export default function App() {
   const filteredOpenPositions = useMemo(() => {
     const activeAccount = filters.account || selectedAccount;
     if (activeAccount === 'ALL') return openPositions;
-    return openPositions.filter(p => String(p.accountLogin || '276133463') === String(activeAccount));
+    return openPositions.filter(p => !p.accountLogin || String(p.accountLogin) === String(activeAccount));
   }, [openPositions, filters.account, selectedAccount]);
 
   // Active account trades for equity and profit computation
   const activeAccountTrades = useMemo(() => {
     const activeAccount = filters.account || selectedAccount;
     if (activeAccount && activeAccount !== 'ALL') {
-      return trades.filter(t => String(t.accountLogin || '276133463') === String(activeAccount));
+      return trades.filter(t => !t.accountLogin || String(t.accountLogin) === String(activeAccount));
     }
     return trades.filter(t => {
-      const tradeAccount = String(t.accountLogin || '276133463');
-      return activeAccountLogins.size === 0 || activeAccountLogins.has(tradeAccount);
+      const tradeAccount = t.accountLogin ? String(t.accountLogin) : '';
+      return activeAccountLogins.size === 0 || !tradeAccount || activeAccountLogins.has(tradeAccount);
     });
   }, [trades, filters.account, selectedAccount, activeAccountLogins]);
 
@@ -857,6 +864,7 @@ export default function App() {
                 openPositions={filteredOpenPositions}
                 selectedAccount={selectedAccount}
                 onViewTrade={(trade) => setSelectedTradeForDetail(trade)}
+                onReplayTrade={handleLaunchReplay}
                 onEditTrade={(trade) => {
                   setTradeToEdit(trade);
                   setIsManualModalOpen(true);
@@ -874,14 +882,21 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: PSYCHOLOGY ENGINE */}
+          {/* TAB 3: TRADE REPLAY STUDIO */}
+          {activeTab === 'replay' && (
+            <div className="animate-fadeIn">
+              <TradeReplayView trades={filteredTrades} />
+            </div>
+          )}
+
+          {/* TAB 4: PSYCHOLOGY ENGINE */}
           {activeTab === 'psychology' && (
             <div className="animate-fadeIn">
               <PsychologyDashboard trades={filteredTrades} />
             </div>
           )}
 
-          {/* TAB 4: PLAYBOOK SETUPS */}
+          {/* TAB 5: PLAYBOOK SETUPS */}
           {activeTab === 'playbook' && (
             <div className="animate-fadeIn">
               <PlaybookView
@@ -901,6 +916,18 @@ export default function App() {
         trade={selectedTradeForDetail}
         onClose={() => setSelectedTradeForDetail(null)}
         onUpdateTrade={handleSaveTrade}
+        onReplayTrade={handleLaunchReplay}
+      />
+
+      <TradeReplayModal
+        isOpen={isReplayModalOpen}
+        trade={selectedTradeForReplay}
+        allTrades={filteredTrades}
+        onClose={() => {
+          setIsReplayModalOpen(false);
+          setSelectedTradeForReplay(null);
+        }}
+        onSelectTrade={(t) => setSelectedTradeForReplay(t)}
       />
 
       <ManualTradeModal

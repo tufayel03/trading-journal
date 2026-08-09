@@ -15,7 +15,9 @@ import {
   Activity,
   Zap,
   Upload,
-  Plus
+  Plus,
+  Play,
+  Video
 } from 'lucide-react';
 import { Trade, OpenPosition } from '../../types';
 
@@ -27,6 +29,7 @@ interface TradeTableProps {
   onEditTrade: (trade: Trade) => void;
   onDeleteTrade: (tradeId: string) => void;
   onExportSelected: (trades: Trade[]) => void;
+  onReplayTrade?: (trade: Trade) => void;
   onOpenMT5Sync?: () => void;
   onOpenImport?: () => void;
   onOpenManual?: () => void;
@@ -41,6 +44,7 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   onEditTrade,
   onDeleteTrade,
   onExportSelected,
+  onReplayTrade,
   onOpenMT5Sync,
   onOpenImport,
   onOpenManual,
@@ -366,8 +370,8 @@ export const TradeTable: React.FC<TradeTableProps> = ({
                 </tr>
               ) : (
                 sortedTrades.map((t) => {
-                  const isWin = t.netProfit >= 0.5;
-                  const isLoss = t.netProfit <= -0.5;
+                  const isWin = t.netProfit > 0;
+                  const isLoss = t.netProfit < 0;
                   const isSelected = selectedIds.has(t.id);
                   const closeDateFormatted = new Date(t.closeTime).toLocaleDateString('en-US', { 
                     month: 'short', 
@@ -520,12 +524,23 @@ export const TradeTable: React.FC<TradeTableProps> = ({
                       {/* Actions */}
                       <td className="py-3 text-right pr-2">
                         <div className="flex items-center justify-end gap-1">
+                          {onReplayTrade && (
+                            <button
+                              onClick={() => onReplayTrade(t)}
+                              title="Replay Trade on TradingView Candlestick Chart (TradeZella Mode)"
+                              className="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500 hover:text-black text-emerald-400 border border-emerald-500/20 rounded-md transition-all flex items-center gap-1 font-bold text-[10px] shadow-sm"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              <span className="hidden xl:inline">Replay</span>
+                            </button>
+                          )}
+
                           <button
                             onClick={() => onViewTrade(t)}
                             title="View Trade Modal & Screenshots"
                             className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
                           >
-                            <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                            <Eye className="w-3.5 h-3.5 text-cyan-400" />
                           </button>
 
                           <button

@@ -25,8 +25,8 @@ import { ThemeSwitcher } from './ThemeSwitcher';
 import { ThemeId, ZoomLevel } from '../lib/theme';
 
 interface TopBarProps {
-  activeTab: 'dashboard' | 'trades' | 'psychology' | 'playbook';
-  setActiveTab: (tab: 'dashboard' | 'trades' | 'psychology' | 'playbook') => void;
+  activeTab: 'dashboard' | 'trades' | 'replay' | 'psychology' | 'playbook';
+  setActiveTab: (tab: 'dashboard' | 'trades' | 'replay' | 'psychology' | 'playbook') => void;
   openMobileMenu: () => void;
   openManualModal: () => void;
   openImportModal: () => void;
@@ -89,6 +89,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const tabLabels = {
     dashboard: 'Analytics Dashboard',
     trades: 'Trade Log Table',
+    replay: 'Trade Replay Studio',
     psychology: 'Psychology Engine',
     playbook: 'Playbook Setups'
   };
