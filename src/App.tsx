@@ -95,13 +95,10 @@ export default function App() {
         if (t.id.startsWith('trd-')) return false;
         
         // Remove demo account 160096169 trades
-        if (String(t.accountLogin) === '160096169' || String(t.id).startsWith('mt5-160096169')) return false;
+        if (String(t.accountLogin) === '160096169') return false;
 
         // Remove test verification trades
         if (t.notes?.includes('Live Auto-Sync Verification Test Trade')) return false;
-        
-        // Ensure trade has a real ticket or belongs to real user account
-        if (String(t.accountLogin) !== '276133463' && (!t.ticket || String(t.ticket).length < 5)) return false;
 
         return true;
       });
@@ -109,6 +106,18 @@ export default function App() {
       saveTrades(deduped);
       return deduped;
     });
+
+    // Also fetch initial real trades from database immediately on mount
+    fetch('/api/webhook/trade')
+      .then(res => res.json())
+      .then((serverTrades: Trade[]) => {
+        if (Array.isArray(serverTrades) && serverTrades.length > 0) {
+          const valid = serverTrades.filter(t => String(t.accountLogin) !== '160096169');
+          setTrades(valid);
+          saveTrades(valid);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trades' | 'psychology' | 'playbook'>('dashboard');
@@ -155,14 +164,12 @@ export default function App() {
               const cleanedCurrent = current.filter(t => 
                 t && t.id && 
                 !t.id.startsWith('trd-') && 
-                String(t.accountLogin) !== '160096169' && 
-                !String(t.id).startsWith('mt5-160096169') &&
-                (String(t.accountLogin) === '276133463' || (t.ticket && String(t.ticket).length >= 5))
+                String(t.accountLogin) !== '160096169'
               );
               let merged = [...cleanedCurrent];
 
               syncedTrades.forEach(st => {
-                if (String(st.accountLogin) === '160096169' || String(st.id).startsWith('mt5-160096169')) return;
+                if (String(st.accountLogin) === '160096169') return;
                 const stTicket = st.ticket ? String(st.ticket).trim() : null;
                 const stId = st.id ? String(st.id).trim() : null;
 

@@ -16,9 +16,7 @@ export function loadTrades(): Trade[] {
       const valid = parsed.filter((t: any) => 
         t && typeof t === 'object' && t.id &&
         !t.id.startsWith('trd-') &&
-        !String(t.id).startsWith('mt5-160096169') &&
         String(t.accountLogin) !== '160096169' &&
-        (String(t.accountLogin) === '276133463' || (t.ticket && String(t.ticket).length >= 6)) &&
         !t.notes?.includes('Live Auto-Sync Verification Test Trade')
       );
       return valid;

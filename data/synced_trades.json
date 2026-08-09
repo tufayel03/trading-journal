@@ -1,6 +1,6 @@
 [
   {
-    "id": "mt5-160096169-672820838-m4vs",
+    "id": "mt5-276133463-672820838-fi51",
     "ticket": "672820838",
     "symbol": "EURUSD",
     "direction": "SELL",
@@ -32,7 +32,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-672881744-lw66",
+    "id": "mt5-276133463-672881744-jke9",
     "ticket": "672881744",
     "symbol": "GBPUSD",
     "direction": "SELL",
@@ -64,7 +64,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-672888354-11dh",
+    "id": "mt5-276133463-672888354-9d7g",
     "ticket": "672888354",
     "symbol": "GBPUSD",
     "direction": "SELL",
@@ -96,7 +96,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-672966793-wwx0",
+    "id": "mt5-276133463-672966793-xff6",
     "ticket": "672966793",
     "symbol": "GBPUSD",
     "direction": "SELL",
@@ -128,7 +128,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-672967395-qhog",
+    "id": "mt5-276133463-672967395-55ac",
     "ticket": "672967395",
     "symbol": "EURUSD",
     "direction": "SELL",
@@ -160,7 +160,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-673064473-aflv",
+    "id": "mt5-276133463-673064473-jmq1",
     "ticket": "673064473",
     "symbol": "EURUSD",
     "direction": "SELL",
@@ -192,7 +192,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-673064564-4yvr",
+    "id": "mt5-276133463-673064564-zeo9",
     "ticket": "673064564",
     "symbol": "EURUSD",
     "direction": "SELL",
@@ -224,7 +224,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-673691244-arpb",
+    "id": "mt5-276133463-673691244-jg2m",
     "ticket": "673691244",
     "symbol": "USDJPY",
     "direction": "BUY",
@@ -256,7 +256,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-675273461-st5r",
+    "id": "mt5-276133463-675273461-pgz6",
     "ticket": "675273461",
     "symbol": "META",
     "direction": "BUY",
@@ -288,7 +288,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-675349111-4cs7",
+    "id": "mt5-276133463-675349111-eau2",
     "ticket": "675349111",
     "symbol": "ORCL",
     "direction": "BUY",
@@ -320,7 +320,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-675357328-cahk",
+    "id": "mt5-276133463-675357328-fr4v",
     "ticket": "675357328",
     "symbol": "META",
     "direction": "SELL",
@@ -352,7 +352,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-675357528-iq10",
+    "id": "mt5-276133463-675357528-z77m",
     "ticket": "675357528",
     "symbol": "META",
     "direction": "SELL",
@@ -384,7 +384,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-676805818-fh01",
+    "id": "mt5-276133463-676805818-l80g",
     "ticket": "676805818",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -416,7 +416,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-676810884-c2ok",
+    "id": "mt5-276133463-676810884-ncgr",
     "ticket": "676810884",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -448,7 +448,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-677966687-fl2p",
+    "id": "mt5-276133463-677966687-cy9x",
     "ticket": "677966687",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -480,7 +480,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-677997589-6dlb",
+    "id": "mt5-276133463-677997589-h04x",
     "ticket": "677997589",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -512,7 +512,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-678070882-vqs9",
+    "id": "mt5-276133463-678070882-42l3",
     "ticket": "678070882",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -544,7 +544,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-678143021-zh7b",
+    "id": "mt5-276133463-678143021-j43q",
     "ticket": "678143021",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -576,7 +576,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-678171983-f84a",
+    "id": "mt5-276133463-678171983-mz52",
     "ticket": "678171983",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -608,7 +608,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-678175416-3w9x",
+    "id": "mt5-276133463-678175416-jq5j",
     "ticket": "678175416",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -640,7 +640,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-678197286-gf7n",
+    "id": "mt5-276133463-678197286-2afm",
     "ticket": "678197286",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -672,7 +672,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-679092404-fe7t",
+    "id": "mt5-276133463-679092404-jd2q",
     "ticket": "679092404",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -711,7 +711,7 @@
     "afterChartUrl": "data:image/png;base64,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"
   },
   {
-    "id": "mt5-160096169-679098118-nwd5",
+    "id": "mt5-276133463-679098118-w8k4",
     "ticket": "679098118",
     "symbol": "EURUSD",
     "direction": "SELL",
@@ -743,7 +743,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-679299771-s5g2",
+    "id": "mt5-276133463-679299771-bgmh",
     "ticket": "679299771",
     "symbol": "XAUUSD",
     "direction": "SELL",
@@ -775,7 +775,7 @@
     "rating": 0
   },
   {
-    "id": "mt5-160096169-679492026-ql34",
+    "id": "mt5-276133463-679492026-ubo2",
     "ticket": "679492026",
     "symbol": "XAUUSD",
     "direction": "SELL",
