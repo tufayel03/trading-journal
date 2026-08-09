@@ -1,6 +1,6 @@
 import React from 'react';
-import { Filter, Search, RotateCcw, Calendar, Coins, Clock, Target, AlertTriangle } from 'lucide-react';
-import { FilterOptions, UserSettings } from '../types';
+import { Filter, Search, RotateCcw, Calendar, Coins, Clock, Target, AlertTriangle, Globe } from 'lucide-react';
+import { FilterOptions, UserSettings, AccountStatus } from '../types';
 
 interface FilterBarProps {
   filters: FilterOptions;
@@ -8,6 +8,7 @@ interface FilterBarProps {
   settings: UserSettings;
   symbols: string[];
   totalMatches: number;
+  accounts?: AccountStatus[];
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -15,7 +16,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   setFilters,
   settings,
   symbols,
-  totalMatches
+  totalMatches,
+  accounts = []
 }) => {
   const isFiltered = 
     filters.dateRange !== 'ALL' ||
@@ -26,6 +28,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     filters.emotion !== 'ALL' ||
     filters.direction !== 'ALL' ||
     filters.outcome !== 'ALL' ||
+    (filters.account && filters.account !== 'ALL') ||
     filters.searchQuery !== '';
 
   const resetFilters = () => {
@@ -38,6 +41,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       emotion: 'ALL',
       direction: 'ALL',
       outcome: 'ALL',
+      account: 'ALL',
       searchQuery: ''
     });
   };
@@ -81,8 +85,27 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       </div>
 
       {/* Filter Dropdowns Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
         
+        {/* Account Selector */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] uppercase font-semibold text-[var(--text-secondary)] flex items-center gap-1">
+            <Globe className="w-3 h-3 text-cyan-400" /> Account
+          </label>
+          <select
+            value={filters.account || 'ALL'}
+            onChange={(e) => setFilters(prev => ({ ...prev, account: e.target.value }))}
+            className="bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] text-xs rounded-lg px-2.5 py-1.5 outline-none focus:border-[var(--accent-gold)] font-medium"
+          >
+            <option value="ALL">All Accounts (Combined)</option>
+            {accounts.map(a => (
+              <option key={a.login} value={String(a.login)}>
+                Account #{a.login} ({a.server || 'MT5'})
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Date Range */}
         <div className="flex flex-col gap-1">
           <label className="text-[10px] uppercase font-semibold text-[var(--text-secondary)] flex items-center gap-1">

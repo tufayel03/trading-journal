@@ -20,9 +20,14 @@ interface PsychologyDashboardProps {
 export const PsychologyDashboard: React.FC<PsychologyDashboardProps> = ({ trades }) => {
   const mistakesList = useMemo(() => aggregateMistakes(trades), [trades]);
 
+  const mistakeTrades = useMemo(() => trades.filter(t => t.mistakes && t.mistakes.length > 0), [trades]);
+  const cleanTrades = useMemo(() => trades.filter(t => !t.mistakes || t.mistakes.length === 0), [trades]);
+
   const totalMistakeLoss = useMemo(() => {
-    return mistakesList.reduce((sum, item) => sum + item.totalLoss, 0);
-  }, [mistakesList]);
+    return mistakeTrades
+      .filter(t => t.netProfit < 0)
+      .reduce((sum, t) => sum + Math.abs(t.netProfit), 0);
+  }, [mistakeTrades]);
 
   // Aggregate stats by Emotional State
   const emotionStats = useMemo(() => {
@@ -62,13 +67,10 @@ export const PsychologyDashboard: React.FC<PsychologyDashboardProps> = ({ trades
     });
   }, [trades]);
 
-  const cleanTradesCount = trades.filter(t => !t.mistakes || t.mistakes.length === 0).length;
-  const cleanTradesProfit = trades
-    .filter(t => !t.mistakes || t.mistakes.length === 0)
-    .reduce((sum, t) => sum + t.netProfit, 0);
-
+  const cleanTradesCount = cleanTrades.length;
+  const cleanTradesProfit = cleanTrades.reduce((sum, t) => sum + t.netProfit, 0);
   const cleanWinRate = cleanTradesCount > 0 
-    ? (trades.filter(t => (!t.mistakes || t.mistakes.length === 0) && t.netProfit > 0.5).length / cleanTradesCount) * 100 
+    ? (cleanTrades.filter(t => t.netProfit > 0.5).length / cleanTradesCount) * 100 
     : 0;
 
   return (

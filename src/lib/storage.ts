@@ -9,19 +9,31 @@ export function loadTrades(): Trade[] {
   try {
     const raw = localStorage.getItem(TRADES_KEY);
     if (!raw) {
-      saveTrades(MOCK_TRADES);
-      return MOCK_TRADES;
+      return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : MOCK_TRADES;
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter((t: any) => t && typeof t === 'object' && t.id);
+      return valid;
+    }
+    return [];
   } catch {
-    return MOCK_TRADES;
+    return [];
+  }
+}
+
+export function clearAllTrades(): void {
+  try {
+    localStorage.setItem(TRADES_KEY, '[]');
+  } catch (e) {
+    console.error('Failed to clear trades from storage:', e);
   }
 }
 
 export function saveTrades(trades: Trade[]): void {
   try {
-    localStorage.setItem(TRADES_KEY, JSON.stringify(trades));
+    const valid = Array.isArray(trades) ? trades.filter((t: any) => t && typeof t === 'object' && t.id) : [];
+    localStorage.setItem(TRADES_KEY, JSON.stringify(valid));
   } catch (e) {
     console.error('Failed to save trades to storage:', e);
   }
@@ -73,7 +85,7 @@ export function saveSettings(settings: UserSettings): void {
 
 export function exportBackupJSON(trades: Trade[], playbook: PlaybookSetup[], settings: UserSettings): void {
   const data = {
-    app: 'Exness Trading Journal',
+    app: 'HyperTrade PRO Journal',
     exportedAt: new Date().toISOString(),
     version: '1.0',
     trades,
@@ -85,7 +97,7 @@ export function exportBackupJSON(trades: Trade[], playbook: PlaybookSetup[], set
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `exness_journal_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `hypertrade_journal_backup_${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -127,17 +139,17 @@ export function exportTradesCSV(trades: Trade[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `exness_trades_export_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `hypertrade_trades_export_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 export function resetToSampleData(): { trades: Trade[]; playbook: PlaybookSetup[]; settings: UserSettings } {
-  saveTrades(MOCK_TRADES);
+  saveTrades([]);
   savePlaybook(MOCK_PLAYBOOK);
   saveSettings(INITIAL_SETTINGS);
   return {
-    trades: MOCK_TRADES,
+    trades: [],
     playbook: MOCK_PLAYBOOK,
     settings: INITIAL_SETTINGS
   };

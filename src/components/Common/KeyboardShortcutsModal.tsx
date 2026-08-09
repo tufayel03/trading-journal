@@ -14,7 +14,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
 
   const shortcuts = [
     { key: 'N', label: 'Log New Trade Modal' },
-    { key: 'I', label: 'Import Exness Report CSV/HTML' },
+    { key: 'I', label: 'Import Statement CSV/HTML' },
     { key: '1', label: 'Navigate to Analytics Dashboard' },
     { key: '2', label: 'Navigate to Trade Log Table' },
     { key: '3', label: 'Navigate to Psychology Engine' },

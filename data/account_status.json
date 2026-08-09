@@ -1,0 +1,87 @@
+{
+  "accounts": {
+    "276133463": {
+      "login": "276133463",
+      "server": "Exness-MT5Real26",
+      "balance": 297.78,
+      "equity": 301.48,
+      "margin": 14,
+      "freeMargin": 287.48,
+      "currency": "USD",
+      "lastUpdate": "2026-08-09T08:36:30.013Z",
+      "isCent": false,
+      "usdBalance": 297.78,
+      "usdEquity": 301.48,
+      "openPositionsCount": 3
+    }
+  },
+  "account": {
+    "login": "276133463",
+    "server": "Exness-MT5Real26",
+    "balance": 297.78,
+    "equity": 301.48,
+    "margin": 14,
+    "freeMargin": 287.48,
+    "currency": "USD",
+    "lastUpdate": "2026-08-09T08:36:30.013Z",
+    "isCent": false,
+    "usdBalance": 297.78,
+    "usdEquity": 301.48,
+    "openPositionsCount": 3
+  },
+  "openPositions": [
+    {
+      "ticket": "790895962",
+      "symbol": "ORCL",
+      "direction": "BUY",
+      "lotSize": 0.01,
+      "openPrice": 139.76,
+      "currentPrice": 145.84,
+      "stopLoss": 80,
+      "takeProfit": 300,
+      "profit": 6.08,
+      "openTime": "2026-08-03T16:42:38.000Z",
+      "accountLogin": "276133463",
+      "accountServer": "Exness-MT5Real26",
+      "accountCurrency": "USD",
+      "isCent": false,
+      "nativeProfit": 6.08
+    },
+    {
+      "ticket": "792989502",
+      "symbol": "BTCUSDT",
+      "direction": "BUY",
+      "lotSize": 0.01,
+      "openPrice": 64887.8,
+      "currentPrice": 64843.91,
+      "stopLoss": 0,
+      "takeProfit": 100000,
+      "profit": -0.44,
+      "openTime": "2026-08-05T19:52:56.000Z",
+      "accountLogin": "276133463",
+      "accountServer": "Exness-MT5Real26",
+      "accountCurrency": "USD",
+      "isCent": false,
+      "nativeProfit": -0.44
+    },
+    {
+      "ticket": "794576824",
+      "symbol": "GBPUSD",
+      "direction": "SELL",
+      "lotSize": 0.02,
+      "openPrice": 1.34837,
+      "currentPrice": 1.34934,
+      "stopLoss": 1.351,
+      "takeProfit": 1.346,
+      "profit": -1.94,
+      "openTime": "2026-08-07T12:30:54.000Z",
+      "accountLogin": "276133463",
+      "accountServer": "Exness-MT5Real26",
+      "accountCurrency": "USD",
+      "isCent": false,
+      "nativeProfit": -1.94
+    }
+  ],
+  "totalSyncedDeals": 715,
+  "lastSync": "2026-08-09T08:36:30.013Z"
+}

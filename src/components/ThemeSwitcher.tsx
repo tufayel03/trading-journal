@@ -5,7 +5,7 @@ import { THEMES, ThemeId, ThemeConfig, applyTheme } from '../lib/theme';
 interface ThemeSwitcherProps {
   currentTheme: ThemeId;
   onThemeChange: (themeId: ThemeId) => void;
-  variant?: 'popover' | 'inline';
+  variant?: 'popover' | 'inline' | 'compact';
 }
 
 export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
@@ -70,11 +70,16 @@ export const ThemeSwitcher: React.FC<ThemeSwitcherProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-[var(--bg-canvas)] hover:bg-[var(--bg-card-hover)] text-[var(--text-primary)] border border-[var(--border-color)] transition-all shadow-sm"
-        title="Change App Color Theme"
+        className={variant === 'compact'
+          ? "px-2 py-1 flex items-center justify-center text-xs text-[var(--text-secondary)] hover:text-white rounded-md hover:bg-[var(--bg-card-hover)] transition-colors"
+          : "h-9 px-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold rounded-lg bg-[var(--bg-canvas)] hover:bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] transition-all shadow-sm"
+        }
+        title={`Change Theme (Current: ${THEMES[currentTheme]?.name || 'Theme'})`}
       >
-        <Palette className="w-4 h-4 text-[var(--accent-gold)]" />
-        <span className="hidden sm:inline">{THEMES[currentTheme]?.name || 'Theme'}</span>
+        <Palette className="w-3.5 h-3.5 text-[var(--accent-gold)]" />
+        {variant !== 'compact' && (
+          <span className="hidden xl:inline">{THEMES[currentTheme]?.name || 'Theme'}</span>
+        )}
       </button>
 
       {isOpen && (

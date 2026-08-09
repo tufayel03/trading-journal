@@ -235,7 +235,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <button
                 onClick={() => {
-                  if (confirm('Reset journal to sample Exness mock trades? Current edits will be replaced.')) {
+                  if (confirm('Reset journal to sample starter dataset? Current edits will be replaced.')) {
                     onResetToSample();
                     onClose();
                   }

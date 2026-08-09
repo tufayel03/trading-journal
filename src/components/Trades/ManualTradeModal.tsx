@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Flame, Plus, Calculator, DollarSign, Target } from 'lucide-react';
+import { X, Flame, Plus, Calculator, DollarSign, Target, Star, AlertTriangle } from 'lucide-react';
 import { Trade, TradeDirection, TradingSession, TradeEmotion, UserSettings } from '../../types';
 import { calculatePips, calculatePlannedRisk, calculateRMultiple, autoDetectSession, normalizeSymbol } from '../../lib/calculations';
 
@@ -108,7 +108,7 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
 
     const trade: Trade = {
       id: tradeToEdit ? tradeToEdit.id : `trd-${Date.now()}`,
-      ticket: ticket || `man-${Date.now().toString().slice(-6)}`,
+      ticket: ticket || tradeToEdit?.ticket || `man-${Date.now().toString().slice(-6)}`,
       symbol: normalizeSymbol(symbol),
       direction,
       openTime: new Date(openTime).toISOString(),
@@ -119,10 +119,13 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       takeProfit,
       lotSize,
       netProfit,
+      nativeNetProfit: tradeToEdit?.nativeNetProfit !== undefined ? tradeToEdit.nativeNetProfit : netProfit,
       pips: computedPips,
       rMultiple: computedR,
       commission,
       swap,
+      nativeCommission: tradeToEdit?.nativeCommission,
+      nativeSwap: tradeToEdit?.nativeSwap,
       session: session || autoDetectSession(openTime),
       strategy,
       confluences: selectedConfluences,
@@ -130,6 +133,10 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
       emotions,
       notes,
       rating,
+      accountLogin: tradeToEdit?.accountLogin,
+      accountServer: tradeToEdit?.accountServer,
+      accountCurrency: tradeToEdit?.accountCurrency,
+      isCent: tradeToEdit?.isCent,
       beforeChartUrl: tradeToEdit?.beforeChartUrl,
       afterChartUrl: tradeToEdit?.afterChartUrl
     };
@@ -403,6 +410,51 @@ export const ManualTradeModal: React.FC<ManualTradeModalProps> = ({
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Execution Quality (Star Rating) */}
+          <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <label className="text-[10px] uppercase font-bold text-amber-400 flex items-center gap-1.5 mb-0.5">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                Execution Quality (Star Rating)
+              </label>
+              <p className="text-[11px] text-gray-400">
+                {rating === 5 && '⭐⭐⭐⭐⭐ 5 Stars - Flawless Execution (A+ Setup, Followed All Rules)'}
+                {rating === 4 && '⭐⭐⭐⭐ 4 Stars - Solid Execution (Minor Plan Deviation)'}
+                {rating === 3 && '⭐⭐⭐ 3 Stars - Average (Hesitant / Incomplete Rules)'}
+                {rating === 2 && '⭐⭐ 2 Stars - Poor Execution (Significant Rule Violations)'}
+                {rating === 1 && '⭐ 1 Star - Terrible Execution (Tilt / Impulsive Trade)'}
+                {!rating && 'Click a star to grade your trade execution'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={() => setRating(star as 1 | 2 | 3 | 4 | 5)}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    (rating || 0) >= star
+                      ? 'text-amber-400 hover:scale-110'
+                      : 'text-gray-600 hover:text-amber-400/60'
+                  }`}
+                  title={`Rate ${star} Star${star > 1 ? 's' : ''}`}
+                >
+                  <Star className={`w-5 h-5 ${(rating || 0) >= star ? 'fill-amber-400 text-amber-400' : ''}`} />
+                </button>
+              ))}
+              {rating && (
+                <button
+                  type="button"
+                  onClick={() => setRating(undefined as any)}
+                  className="ml-2 text-[10px] text-gray-500 hover:text-gray-300 underline"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
 

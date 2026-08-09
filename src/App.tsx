@@ -19,20 +19,90 @@ import { SettingsModal } from './components/Settings/SettingsModal';
 import { KeyboardShortcutsModal } from './components/Common/KeyboardShortcutsModal';
 import { X, Zap } from 'lucide-react';
 
-import { Trade, PlaybookSetup, UserSettings, FilterOptions } from './types';
-import { loadTrades, saveTrades, loadPlaybook, savePlaybook, loadSettings, saveSettings, exportBackupJSON, exportTradesCSV, resetToSampleData } from './lib/storage';
+import { Trade, PlaybookSetup, UserSettings, FilterOptions, AccountStatus, OpenPosition } from './types';
+import { loadTrades, saveTrades, clearAllTrades, loadPlaybook, savePlaybook, loadSettings, saveSettings, exportBackupJSON, exportTradesCSV, resetToSampleData } from './lib/storage';
 import { calculateKPIStats, normalizeSymbol } from './lib/calculations';
-import { ThemeId, applyTheme, loadSavedTheme } from './lib/theme';
+import { ThemeId, applyTheme, loadSavedTheme, ZoomLevel, applyZoom, loadSavedZoom } from './lib/theme';
 
 export default function App() {
   const [trades, setTrades] = useState<Trade[]>(() => loadTrades());
   const [playbook, setPlaybook] = useState<PlaybookSetup[]>(() => loadPlaybook());
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(() => loadSavedTheme());
+  const [currentZoom, setCurrentZoom] = useState<ZoomLevel>(() => loadSavedZoom());
+  const [accountStatus, setAccountStatus] = useState<AccountStatus | null>(null);
+  const [accountsMap, setAccountsMap] = useState<Record<string, AccountStatus>>({});
+  const [selectedAccount, setSelectedAccount] = useState<string>('ALL');
+  const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
 
   useEffect(() => {
     applyTheme(currentTheme);
   }, [currentTheme]);
+
+  useEffect(() => {
+    applyZoom(currentZoom);
+  }, [currentZoom]);
+
+  // Helper to deduplicate trades by ticket and ID while merging annotations
+  const deduplicateTrades = (tradeList: Trade[]): Trade[] => {
+    const seenTickets = new Set<string>();
+    const seenIds = new Set<string>();
+    const result: Trade[] = [];
+
+    for (const t of tradeList) {
+      if (!t) continue;
+      const ticketKey = t.ticket ? String(t.ticket).trim() : null;
+      const idKey = t.id ? String(t.id).trim() : null;
+
+      if (ticketKey && seenTickets.has(ticketKey)) {
+        const existingIdx = result.findIndex(r => r.ticket && String(r.ticket).trim() === ticketKey);
+        if (existingIdx >= 0) {
+          const existing = result[existingIdx];
+          result[existingIdx] = {
+            ...t,
+            ...existing,
+            mistakes: (existing.mistakes && existing.mistakes.length > 0) ? existing.mistakes : (t.mistakes || []),
+            notes: existing.notes && !existing.notes.startsWith('Auto-synced') ? existing.notes : (t.notes || existing.notes),
+            rating: existing.rating || t.rating,
+            emotions: existing.emotions || t.emotions || 'Disciplined',
+            strategy: existing.strategy && existing.strategy !== 'HyperTrade MT5 Auto Sync' ? existing.strategy : (t.strategy || existing.strategy),
+            confluences: (existing.confluences && existing.confluences.length > 0) ? existing.confluences : (t.confluences || []),
+            beforeChartUrl: existing.beforeChartUrl || t.beforeChartUrl,
+            afterChartUrl: existing.afterChartUrl || t.afterChartUrl
+          };
+        }
+        continue;
+      }
+
+      if (idKey && seenIds.has(idKey)) {
+        continue;
+      }
+
+      if (ticketKey) seenTickets.add(ticketKey);
+      if (idKey) seenIds.add(idKey);
+      result.push(t);
+    }
+    return result;
+  };
+
+  // Purge any legacy dummy mock trades and deduplicate on mount
+  useEffect(() => {
+    setTrades(current => {
+      const cleaned = current.filter(t => 
+        t && t.id && 
+        !t.id.startsWith('trd-100') && 
+        !t.id.startsWith('mt5-78906863') && 
+        !t.id.startsWith('mt5-78190382') &&
+        !t.notes?.includes('Live Auto-Sync Verification Test Trade')
+      );
+      const deduped = deduplicateTrades(cleaned);
+      if (deduped.length !== current.length) {
+        saveTrades(deduped);
+        return deduped;
+      }
+      return current;
+    });
+  }, []);
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'trades' | 'psychology' | 'playbook'>('dashboard');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
@@ -47,6 +117,7 @@ export default function App() {
     emotion: 'ALL',
     direction: 'ALL',
     outcome: 'ALL',
+    account: 'ALL',
     searchQuery: ''
   });
 
@@ -62,40 +133,121 @@ export default function App() {
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState<boolean>(false);
   const [liveSyncToast, setLiveSyncToast] = useState<string | null>(null);
 
-  // Auto-sync polling: Checks local server for trades pushed by MT5 EA
+  // Auto-sync polling: Fetches real trades and live account status from MT5
   useEffect(() => {
-    const checkLiveTrades = async () => {
+    const checkLiveSync = async () => {
       try {
-        const res = await fetch('/api/webhook/trade');
-        if (res.ok) {
-          const syncedTrades: Trade[] = await res.json();
-          if (Array.isArray(syncedTrades) && syncedTrades.length > 0) {
+        // 1. Check synced trades
+        const resTrades = await fetch('/api/webhook/trade');
+        if (resTrades.ok) {
+          const syncedTrades: Trade[] = await resTrades.json();
+          if (Array.isArray(syncedTrades)) {
             setTrades(current => {
-              let updated = false;
-              const next = [...current];
+              let changed = false;
+              let merged = [...current];
+
               syncedTrades.forEach(st => {
-                const exists = next.some(t => (st.ticket && t.ticket === st.ticket) || t.id === st.id);
-                if (!exists) {
-                  next.unshift(st);
-                  updated = true;
+                const stTicket = st.ticket ? String(st.ticket).trim() : null;
+                const stId = st.id ? String(st.id).trim() : null;
+
+                const idx = merged.findIndex(t => 
+                  (stTicket && t.ticket && String(t.ticket).trim() === stTicket) || 
+                  (stId && t.id && String(t.id).trim() === stId)
+                );
+
+                if (idx >= 0) {
+                  const existing = merged[idx];
+                  const updated: Trade = {
+                    ...st,
+                    ...existing,
+                    openPrice: st.openPrice || existing.openPrice,
+                    closePrice: st.closePrice || existing.closePrice,
+                    netProfit: st.netProfit !== undefined ? st.netProfit : existing.netProfit,
+                    nativeNetProfit: st.nativeNetProfit !== undefined ? st.nativeNetProfit : existing.nativeNetProfit,
+                    lotSize: st.lotSize || existing.lotSize,
+                    pips: st.pips || existing.pips,
+                    commission: st.commission !== undefined ? st.commission : existing.commission,
+                    swap: st.swap !== undefined ? st.swap : existing.swap,
+                    closeTime: st.closeTime || existing.closeTime,
+                    accountLogin: st.accountLogin || existing.accountLogin,
+                    accountServer: st.accountServer || existing.accountServer,
+                    accountCurrency: st.accountCurrency || existing.accountCurrency,
+                    isCent: st.isCent !== undefined ? st.isCent : existing.isCent,
+                    // Retain user edits:
+                    mistakes: (existing.mistakes && existing.mistakes.length > 0) ? existing.mistakes : (st.mistakes || []),
+                    notes: existing.notes && !existing.notes.startsWith('Auto-synced') ? existing.notes : (st.notes || existing.notes),
+                    rating: existing.rating || st.rating,
+                    emotions: existing.emotions || st.emotions || 'Disciplined',
+                    strategy: existing.strategy && existing.strategy !== 'HyperTrade MT5 Auto Sync' ? existing.strategy : (st.strategy || existing.strategy),
+                    confluences: (existing.confluences && existing.confluences.length > 0) ? existing.confluences : (st.confluences || []),
+                    beforeChartUrl: existing.beforeChartUrl || st.beforeChartUrl,
+                    afterChartUrl: existing.afterChartUrl || st.afterChartUrl
+                  };
+
+                  if (JSON.stringify(merged[idx]) !== JSON.stringify(updated)) {
+                    merged[idx] = updated;
+                    changed = true;
+                  }
+                } else {
+                  merged.unshift(st);
+                  changed = true;
+                  setLiveSyncToast(`Auto-synced trade #${st.ticket || st.symbol} (${st.netProfit >= 0 ? '+' : ''}$${st.netProfit.toFixed(2)}) from MT5!`);
+                  setTimeout(() => setLiveSyncToast(null), 5000);
                 }
               });
-              if (updated) {
-                saveTrades(next);
-                setLiveSyncToast(`Auto-synced new trade from Exness MT5!`);
-                setTimeout(() => setLiveSyncToast(null), 4000);
-                return next;
+
+              const deduped = deduplicateTrades(merged);
+              if (deduped.length !== current.length || changed) {
+                saveTrades(deduped);
+                return deduped;
               }
               return current;
             });
           }
         }
+
+        // 2. Check live multi-account status & open positions
+        const resStatus = await fetch('/api/webhook/status');
+        if (resStatus.ok) {
+          const statusData = await resStatus.json();
+          if (statusData.accounts && typeof statusData.accounts === 'object') {
+            setAccountsMap(prev => {
+              if (JSON.stringify(prev) !== JSON.stringify(statusData.accounts)) {
+                return statusData.accounts;
+              }
+              return prev;
+            });
+          }
+          if (statusData.account) {
+            setAccountStatus(prev => {
+              if (
+                !prev ||
+                prev.login !== statusData.account.login ||
+                prev.balance !== statusData.account.balance ||
+                prev.equity !== statusData.account.equity ||
+                prev.server !== statusData.account.server
+              ) {
+                return statusData.account;
+              }
+              return prev;
+            });
+          }
+          if (Array.isArray(statusData.openPositions)) {
+            setOpenPositions(prev => {
+              if (JSON.stringify(prev) !== JSON.stringify(statusData.openPositions)) {
+                return statusData.openPositions;
+              }
+              return prev;
+            });
+          }
+        }
       } catch {
-        // Dev server or endpoint offline
+        // Offline or dev server restart
       }
     };
 
-    const interval = setInterval(checkLiveTrades, 3000);
+    checkLiveSync();
+    const interval = setInterval(checkLiveSync, 2500);
     return () => clearInterval(interval);
   }, []);
 
@@ -147,6 +299,18 @@ export default function App() {
     saveTrades(newTrades);
   };
 
+  const handleClearAllTrades = async () => {
+    if (confirm('Are you sure you want to clear all trades? This will reset the journal to 0 trades.')) {
+      clearAllTrades();
+      setTrades([]);
+      try {
+        await fetch('/api/sync/clear', { method: 'POST' });
+      } catch {}
+      setLiveSyncToast('All trades cleared. Journal is ready for real trades.');
+      setTimeout(() => setLiveSyncToast(null), 4000);
+    }
+  };
+
   const updatePlaybookState = (newPlaybook: PlaybookSetup[]) => {
     setPlaybook(newPlaybook);
     savePlaybook(newPlaybook);
@@ -160,16 +324,40 @@ export default function App() {
   // Filtered symbols list for filter bar
   const availableSymbols = useMemo(() => {
     const set = new Set<string>();
-    trades.forEach(t => set.add(normalizeSymbol(t.symbol)));
+    trades.forEach(t => {
+      if (t?.symbol) set.add(normalizeSymbol(t.symbol));
+    });
     return Array.from(set);
   }, [trades]);
 
+  // Multi-Account Active List
+  const accountsList = useMemo(() => {
+    const list = Object.values(accountsMap);
+    if (list.length === 0 && accountStatus) {
+      return [accountStatus];
+    }
+    return list;
+  }, [accountsMap, accountStatus]);
+
   // Main Trade Filter Engine
   const filteredTrades = useMemo(() => {
+    if (!Array.isArray(trades)) return [];
     return trades.filter(t => {
+      if (!t) return false;
+      const cTime = t.closeTime || t.openTime || new Date().toISOString();
+
+      // Account Filter (Individual Account or All Combined)
+      const activeAccount = filters.account || selectedAccount;
+      if (activeAccount && activeAccount !== 'ALL') {
+        const tradeAccount = t.accountLogin || '276133463';
+        if (String(tradeAccount) !== String(activeAccount)) {
+          return false;
+        }
+      }
+
       // Date Range Filter
       if (filters.dateRange !== 'ALL') {
-        const tradeDate = new Date(t.closeTime);
+        const tradeDate = new Date(cTime);
         const now = new Date();
         
         if (filters.dateRange === 'TODAY') {
@@ -189,13 +377,13 @@ export default function App() {
 
       // Calendar Heatmap Day Selection
       if (selectedCalendarDate) {
-        const tDate = t.closeTime.split('T')[0];
+        const tDate = cTime.includes('T') ? cTime.split('T')[0] : cTime.slice(0, 10);
         if (tDate !== selectedCalendarDate) return false;
       }
 
       // Symbol
       if (filters.symbol !== 'ALL') {
-        const norm = normalizeSymbol(t.symbol);
+        const norm = normalizeSymbol(t.symbol || '');
         if (filters.symbol === 'XAUUSD' && norm !== 'XAUUSD') return false;
         if (filters.symbol === 'FOREX' && norm === 'XAUUSD') return false;
         if (filters.symbol !== 'XAUUSD' && filters.symbol !== 'FOREX' && norm !== filters.symbol) return false;
@@ -209,24 +397,26 @@ export default function App() {
 
       // Mistake
       if (filters.mistake !== 'ALL') {
+        const mList = Array.isArray(t.mistakes) ? t.mistakes : [];
         if (filters.mistake === 'NONE') {
-          if (t.mistakes && t.mistakes.length > 0) return false;
+          if (mList.length > 0) return false;
         } else {
-          if (!t.mistakes || !t.mistakes.includes(filters.mistake)) return false;
+          if (!mList.includes(filters.mistake)) return false;
         }
       }
 
       // Outcome
       if (filters.outcome !== 'ALL') {
-        if (filters.outcome === 'WIN' && t.netProfit <= 0.5) return false;
-        if (filters.outcome === 'LOSS' && t.netProfit >= -0.5) return false;
-        if (filters.outcome === 'BREAK_EVEN' && (t.netProfit > 0.5 || t.netProfit < -0.5)) return false;
+        const profit = t.netProfit || 0;
+        if (filters.outcome === 'WIN' && profit <= 0.5) return false;
+        if (filters.outcome === 'LOSS' && profit >= -0.5) return false;
+        if (filters.outcome === 'BREAK_EVEN' && (profit > 0.5 || profit < -0.5)) return false;
       }
 
       // Search Query
       if (filters.searchQuery.trim() !== '') {
         const q = filters.searchQuery.toLowerCase();
-        const matchSymbol = t.symbol.toLowerCase().includes(q);
+        const matchSymbol = (t.symbol || '').toLowerCase().includes(q);
         const matchTicket = (t.ticket || '').toLowerCase().includes(q);
         const matchStrategy = (t.strategy || '').toLowerCase().includes(q);
         const matchNotes = (t.notes || '').toLowerCase().includes(q);
@@ -235,28 +425,88 @@ export default function App() {
 
       return true;
     });
-  }, [trades, filters, selectedCalendarDate]);
+  }, [trades, filters, selectedAccount, selectedCalendarDate]);
+
+  // Open Positions filtered by selected account
+  const filteredOpenPositions = useMemo(() => {
+    const activeAccount = filters.account || selectedAccount;
+    if (activeAccount === 'ALL') return openPositions;
+    return openPositions.filter(p => String(p.accountLogin || '276133463') === String(activeAccount));
+  }, [openPositions, filters.account, selectedAccount]);
+
+  // Active account trades for equity and profit computation
+  const activeAccountTrades = useMemo(() => {
+    const activeAccount = filters.account || selectedAccount;
+    if (activeAccount === 'ALL') return trades;
+    return trades.filter(t => String(t.accountLogin || '276133463') === String(activeAccount));
+  }, [trades, filters.account, selectedAccount]);
+
+  // Overall Net Profit for selected account (or all accounts combined)
+  const overallNetProfit = useMemo(() => {
+    if (!Array.isArray(activeAccountTrades)) return 0;
+    return activeAccountTrades.reduce((sum, t) => sum + (t?.netProfit || 0), 0);
+  }, [activeAccountTrades]);
+
+  const startingCapital = useMemo(() => {
+    const activeAccount = filters.account || selectedAccount;
+    if (activeAccount === 'ALL') {
+      if (accountsList.length > 0) {
+        const totalBalanceUSD = accountsList.reduce((sum, a) => {
+          const balUSD = a.usdBalance !== undefined 
+            ? a.usdBalance 
+            : ((a.isCent || a.currency === 'USC') ? (a.balance / 100) : a.balance);
+          return sum + (balUSD || 0);
+        }, 0);
+        return Math.max(0, Number((totalBalanceUSD - overallNetProfit).toFixed(2)));
+      }
+      if (accountStatus?.balance) {
+        const balUSD = (accountStatus.isCent || accountStatus.currency === 'USC') ? (accountStatus.balance / 100) : accountStatus.balance;
+        return Math.max(0, Number((balUSD - overallNetProfit).toFixed(2)));
+      }
+      return settings?.initialBalance || 200;
+    } else {
+      const targetAcc = accountsList.find(a => String(a.login) === String(activeAccount)) || accountStatus;
+      if (targetAcc?.balance) {
+        const isCent = targetAcc.isCent || targetAcc.currency === 'USC';
+        const balUSD = isCent ? (targetAcc.balance / 100) : targetAcc.balance;
+        return Math.max(0, Number((balUSD - overallNetProfit).toFixed(2)));
+      }
+      return settings?.initialBalance || 200;
+    }
+  }, [filters.account, selectedAccount, accountsList, accountStatus, overallNetProfit, settings?.initialBalance]);
 
   // Overall KPI Stats
   const kpiStats = useMemo(() => {
-    return calculateKPIStats(filteredTrades, settings.initialBalance);
-  }, [filteredTrades, settings.initialBalance]);
-
-  // Overall Net Profit across all trades for Equity pill
-  const overallNetProfit = useMemo(() => {
-    return trades.reduce((sum, t) => sum + t.netProfit, 0);
-  }, [trades]);
+    return calculateKPIStats(filteredTrades, startingCapital);
+  }, [filteredTrades, startingCapital]);
 
   // Trade Actions
   const handleSaveTrade = (savedTrade: Trade) => {
-    const index = trades.findIndex(t => t.id === savedTrade.id);
+    const savedTicket = savedTrade.ticket ? String(savedTrade.ticket).trim() : null;
+    const savedId = savedTrade.id ? String(savedTrade.id).trim() : null;
+
+    const index = trades.findIndex(t => 
+      (savedTicket && t.ticket && String(t.ticket).trim() === savedTicket) || 
+      (savedId && t.id && String(t.id).trim() === savedId)
+    );
+
+    let next: Trade[];
     if (index >= 0) {
-      const next = [...trades];
-      next[index] = savedTrade;
-      updateTradesState(next);
+      next = [...trades];
+      next[index] = { ...next[index], ...savedTrade };
     } else {
-      updateTradesState([savedTrade, ...trades]);
+      next = [savedTrade, ...trades];
     }
+
+    const cleanDeduped = deduplicateTrades(next);
+    updateTradesState(cleanDeduped);
+
+    // Asynchronously persist update to backend
+    fetch('/api/webhook/trade', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(savedTrade)
+    }).catch(() => {});
   };
 
   const handleDeleteTrade = (tradeId: string) => {
@@ -319,6 +569,9 @@ export default function App() {
           onExportJSON={() => exportBackupJSON(trades, playbook, settings)}
           isCollapsed={isSidebarCollapsed}
           setIsCollapsed={setIsSidebarCollapsed}
+          accountStatus={accountStatus}
+          accounts={accountsList}
+          selectedAccount={selectedAccount}
         />
       </div>
 
@@ -368,6 +621,9 @@ export default function App() {
               onExportJSON={() => exportBackupJSON(trades, playbook, settings)}
               isCollapsed={false}
               setIsCollapsed={() => {}}
+              accountStatus={accountStatus}
+              accounts={accountsList}
+              selectedAccount={selectedAccount}
             />
           </div>
         </div>
@@ -391,25 +647,43 @@ export default function App() {
           netProfit={overallNetProfit}
           currentTheme={currentTheme}
           onThemeChange={setCurrentTheme}
+          accountStatus={accountStatus}
+          accounts={accountsList}
+          selectedAccount={selectedAccount}
+          onSelectAccount={(accId) => {
+            setSelectedAccount(accId);
+            setFilters(prev => ({ ...prev, account: accId }));
+          }}
+          currentZoom={currentZoom}
+          onZoomChange={setCurrentZoom}
         />
 
         {/* Main Workspace Canvas */}
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main className="flex-1 max-w-[1680px] 2xl:max-w-[1800px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
           
           {/* Global Filter Bar */}
           <FilterBar
             filters={filters}
-            setFilters={setFilters}
+            setFilters={(updater) => {
+              setFilters(prev => {
+                const next = typeof updater === 'function' ? updater(prev) : updater;
+                if (next.account && next.account !== selectedAccount) {
+                  setSelectedAccount(next.account);
+                }
+                return next;
+              });
+            }}
             settings={settings}
             symbols={availableSymbols}
             totalMatches={filteredTrades.length}
+            accounts={accountsList}
           />
 
           {/* TAB 1: ANALYTICS DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
               <KPIOverview stats={kpiStats} />
-              <EquityCurveChart trades={filteredTrades} initialBalance={settings.initialBalance} />
+              <EquityCurveChart trades={filteredTrades} initialBalance={startingCapital} />
               <CalendarHeatmap
                 trades={trades}
                 selectedDate={selectedCalendarDate}
@@ -427,6 +701,8 @@ export default function App() {
               <KPIOverview stats={kpiStats} />
               <TradeTable
                 trades={filteredTrades}
+                openPositions={filteredOpenPositions}
+                selectedAccount={selectedAccount}
                 onViewTrade={(trade) => setSelectedTradeForDetail(trade)}
                 onEditTrade={(trade) => {
                   setTradeToEdit(trade);
@@ -434,6 +710,13 @@ export default function App() {
                 }}
                 onDeleteTrade={handleDeleteTrade}
                 onExportSelected={(selectedList) => exportTradesCSV(selectedList)}
+                onOpenMT5Sync={() => setIsMT5SyncModalOpen(true)}
+                onOpenImport={() => setIsImportModalOpen(true)}
+                onOpenManual={() => {
+                  setTradeToEdit(null);
+                  setIsManualModalOpen(true);
+                }}
+                onClearAllTrades={handleClearAllTrades}
               />
             </div>
           )}
@@ -488,8 +771,11 @@ export default function App() {
         isOpen={isMT5SyncModalOpen}
         onClose={() => setIsMT5SyncModalOpen(false)}
         onSyncNewTrades={(newTrades) => {
-          updateTradesState([...newTrades, ...trades]);
+          updateTradesState(newTrades);
         }}
+        accountStatus={accountStatus}
+        accounts={accountsList}
+        onClearAll={handleClearAllTrades}
       />
 
       <SettingsModal

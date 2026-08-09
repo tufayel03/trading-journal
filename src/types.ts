@@ -27,12 +27,21 @@ export interface Trade {
   stopLoss?: number;
   takeProfit?: number;
   lotSize: number;
-  netProfit: number; // in USD or account currency
+  netProfit: number; // in USD (normalized)
+  nativeNetProfit?: number; // in original account currency (e.g. USC cents)
   pips: number;
   rMultiple?: number;
   commission?: number;
   swap?: number;
+  nativeCommission?: number;
+  nativeSwap?: number;
   
+  // Multi-Account & Currency Tagging
+  accountLogin?: string;
+  accountServer?: string;
+  accountCurrency?: string; // 'USD', 'USC', etc.
+  isCent?: boolean;
+
   // Journaling & Qualitative Data
   session: TradingSession;
   strategy: string;
@@ -81,6 +90,7 @@ export interface FilterOptions {
   direction: 'ALL' | 'BUY' | 'SELL';
   outcome: 'ALL' | 'WIN' | 'LOSS' | 'BREAK_EVEN';
   searchQuery: string;
+  account?: string; // 'ALL' or specific account login string
 }
 
 export interface KPIStats {
@@ -142,3 +152,48 @@ export interface StrategySummary {
   profitFactor: number;
   avgRR: number;
 }
+
+export interface OpenPosition {
+  ticket: string;
+  symbol: string;
+  direction: TradeDirection;
+  lotSize: number;
+  openPrice: number;
+  currentPrice: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  profit: number; // in USD (normalized)
+  nativeProfit?: number; // in native currency (e.g. USC)
+  openTime: string;
+  accountLogin?: string;
+  accountServer?: string;
+  accountCurrency?: string;
+  isCent?: boolean;
+}
+
+export interface AccountStatus {
+  login: number | string;
+  server: string;
+  balance: number; // native balance (e.g. 504.80 USC)
+  equity: number; // native equity (e.g. 504.80 USC)
+  usdBalance?: number; // normalized USD balance (e.g. $5.05 USD)
+  usdEquity?: number; // normalized USD equity (e.g. $5.05 USD)
+  margin: number;
+  freeMargin: number;
+  currency: string;
+  isCent?: boolean;
+  lastUpdate: string;
+  openPositionsCount?: number;
+  totalSyncedDeals?: number;
+  accountName?: string;
+}
+
+export interface MultiAccountPayload {
+  accounts: Record<string, AccountStatus>;
+  openPositions: OpenPosition[];
+  totalSyncedDeals: number;
+  lastSync: string;
+  activeAccount?: string;
+}
+
+

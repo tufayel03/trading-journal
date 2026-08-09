@@ -86,7 +86,7 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
         <div className="flex items-center gap-2">
           <CalendarIcon className="w-5 h-5 text-amber-400" />
           <div>
-            <h3 className="text-base font-bold text-white">Tradezella Calendar Heatmap</h3>
+            <h3 className="text-base font-bold text-white">Performance Calendar Heatmap</h3>
             <p className="text-xs text-gray-400">Daily P&L performance matrix. Click any day to view trade details.</p>
           </div>
         </div>

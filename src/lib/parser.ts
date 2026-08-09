@@ -26,7 +26,7 @@ function parseExnessDate(dateStr: string): string {
   if (!dateStr || dateStr.trim() === '') return new Date().toISOString();
   try {
     let clean = dateStr.trim();
-    // Replace dots in dates like "2026.08.01 14:30:00"
+    // Replace dots in dates like "2026.08.01 14:30:00" -> "2026-08-01 14:30:00"
     clean = clean.replace(/^(\d{4})\.(\d{2})\.(\d{2})/, '$1-$2-$3');
     const dt = new Date(clean);
     if (!isNaN(dt.getTime())) {
@@ -71,7 +71,7 @@ function parseExnessCsv(file: File): Promise<ParseResult> {
 
         results.data.forEach((row: any, idx: number) => {
           try {
-            // Find keys case-insensitively
+            if (!row || typeof row !== 'object') return;
             const keys = Object.keys(row);
             const getVal = (...possibleNames: string[]): string => {
               for (const name of possibleNames) {
@@ -83,46 +83,37 @@ function parseExnessCsv(file: File): Promise<ParseResult> {
               return '';
             };
 
-            const typeRaw = getVal('Type', 'Order Type', 'Action', 'Direction').toUpperCase();
+            const typeRaw = getVal('Type', 'Order Type', 'Action', 'Direction', 'deal_type').toUpperCase();
             if (!typeRaw.includes('BUY') && !typeRaw.includes('SELL')) {
-              // Skip balance, deposit, withdrawal rows
+              // Skip balance deposits/withdrawals
               return;
             }
 
             const direction: TradeDirection = typeRaw.includes('BUY') ? 'BUY' : 'SELL';
-            const symbolRaw = getVal('Symbol', 'Item', 'Instrument', 'Pair');
-            if (!symbolRaw) return;
-
+            const symbolRaw = getVal('Symbol', 'Item', 'Instrument', 'Pair', 'deal_symbol') || 'XAUUSD';
             const symbol = normalizeSymbol(symbolRaw);
-            const ticket = getVal('Ticket', 'Position', 'Order', 'Position ID', 'ID') || `ex-${Date.now()}-${idx}`;
+            const ticket = getVal('Ticket', 'Position', 'Order', 'Position ID', 'ID', 'deal_ticket') || `ex-${Date.now()}-${idx}`;
             
-            const openTimeRaw = getVal('Open Time', 'OpenTime', 'Created At', 'Time');
+            const openTimeRaw = getVal('Open Time', 'OpenTime', 'Created At', 'Time', 'deal_time');
             const closeTimeRaw = getVal('Close Time', 'CloseTime', 'Closed At', 'Time Closed') || openTimeRaw;
 
             const openTime = parseExnessDate(openTimeRaw);
             const closeTime = parseExnessDate(closeTimeRaw);
 
-            const lotSize = parseNumber(getVal('Volume', 'Lots', 'Size', 'Amount'));
-            const openPrice = parseNumber(getVal('Open Price', 'Price', 'OpenPrice'));
-            const closePrice = parseNumber(getVal('Close Price', 'Price 2', 'ClosePrice'));
+            const lotSize = parseNumber(getVal('Volume', 'Lots', 'Size', 'Amount', 'deal_volume')) || 0.01;
+            const openPrice = parseNumber(getVal('Open Price', 'Price', 'OpenPrice', 'deal_price'));
+            const closePrice = parseNumber(getVal('Close Price', 'Price 2', 'ClosePrice')) || openPrice;
             const stopLoss = parseNumber(getVal('S / L', 'SL', 'Stop Loss', 'S/L')) || undefined;
             const takeProfit = parseNumber(getVal('T / P', 'TP', 'Take Profit', 'T/P')) || undefined;
 
-            const commission = parseNumber(getVal('Commission', 'Commissions'));
-            const swap = parseNumber(getVal('Swap', 'Storage'));
-            const rawProfit = parseNumber(getVal('Profit', 'Net Profit', 'Profit (USD)', 'Gross Profit'));
-
-            // Net Profit includes profit + swap + commission if not already deducted
-            const netProfit = rawProfit;
+            const commission = parseNumber(getVal('Commission', 'Commissions', 'deal_commission'));
+            const swap = parseNumber(getVal('Swap', 'Storage', 'deal_swap'));
+            const netProfit = parseNumber(getVal('Profit', 'Net Profit', 'Profit (USD)', 'Gross Profit', 'deal_profit'));
 
             // Calculate pips
             const pips = calculatePips(symbol, direction, openPrice, closePrice);
-
-            // Calculate risk & R-Multiple
             const plannedRisk = calculatePlannedRisk(symbol, openPrice, stopLoss, lotSize);
             const rMultiple = calculateRMultiple(netProfit, plannedRisk);
-
-            // Auto detect trading session
             const session = autoDetectSession(openTime);
 
             const trade: Trade = {
@@ -136,23 +127,23 @@ function parseExnessCsv(file: File): Promise<ParseResult> {
               closePrice,
               stopLoss,
               takeProfit,
-              lotSize: lotSize || 0.1,
+              lotSize,
               netProfit: Number(netProfit.toFixed(2)),
               pips,
               rMultiple,
               commission: Number(commission.toFixed(2)),
               swap: Number(swap.toFixed(2)),
               session,
-              strategy: 'Exness Auto-Import',
-              confluences: ['Exness Trade Export'],
+              strategy: 'Statement Import',
+              confluences: ['History CSV'],
               mistakes: [],
-              emotions: 'Neutral',
-              notes: `Imported from Exness export (${symbolRaw}). Ticket #${ticket}`
+              emotions: 'Disciplined',
+              notes: `Imported from history export. Ticket #${ticket}`
             };
 
             trades.push(trade);
           } catch (err: any) {
-            errors.push(`Row ${idx + 1}: ${err.message || 'Error parsing row'}`);
+            errors.push(`Row parse warning: ${err.message}`);
           }
         });
 
@@ -162,61 +153,64 @@ function parseExnessCsv(file: File): Promise<ParseResult> {
           totalParsed: trades.length
         });
       },
-      error: (err) => {
-        resolve({ trades: [], errors: [`CSV Parsing Failed: ${err.message}`], totalParsed: 0 });
+      error: (error: any) => {
+        resolve({
+          trades: [],
+          errors: [`CSV Parsing error: ${error.message}`],
+          totalParsed: 0
+        });
       }
     });
   });
 }
 
 /**
- * Parses Exness / MetaTrader HTML report file
+ * Parses MetaTrader HTML report file
  */
 async function parseExnessHtml(file: File): Promise<ParseResult> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const htmlContent = e.target?.result as string;
+        const html = e.target?.result as string;
         const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlContent, 'text/html');
-        const rows = doc.querySelectorAll('tr');
-
+        const doc = parser.parseFromString(html, 'text/html');
+        const rows = Array.from(doc.querySelectorAll('tr'));
         const trades: Trade[] = [];
         const errors: string[] = [];
 
-        rows.forEach((tr, idx) => {
-          const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim() || '');
-          if (cells.length < 10) return; // Not a trade row
+        rows.forEach((row, idx) => {
+          const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent?.trim() || '');
+          if (cells.length < 9) return;
 
-          const typeText = cells[2]?.toUpperCase() || '';
-          if (!typeText.includes('BUY') && !typeText.includes('SELL')) return;
+          // Check if row has valid ticket ID
+          const ticket = cells[0];
+          if (!ticket || !/^\d+$/.test(ticket)) return;
 
-          const direction: TradeDirection = typeText.includes('BUY') ? 'BUY' : 'SELL';
-          const ticket = cells[0] || `ex-html-${idx}`;
-          const openTime = parseExnessDate(cells[1]);
-          const lotSize = parseNumber(cells[3]);
-          const symbol = normalizeSymbol(cells[4]);
-          const openPrice = parseNumber(cells[5]);
-          const stopLoss = parseNumber(cells[6]) || undefined;
-          const takeProfit = parseNumber(cells[7]) || undefined;
-          
-          let closeTime = openTime;
+          const openTime = parseExnessDate(cells[1] || cells[0]);
+          const directionRaw = (cells[2] || '').toUpperCase();
+          const direction: 'BUY' | 'SELL' = directionRaw.includes('BUY') ? 'BUY' : 'SELL';
+          const lotSize = parseFloat(cells[3]) || 0.01;
+          const symbol = normalizeSymbol(cells[4] || 'XAUUSD');
+          const openPrice = parseFloat(cells[5]) || 0;
+          const stopLoss = parseFloat(cells[6]) || undefined;
+          const takeProfit = parseFloat(cells[7]) || undefined;
+
+          let closeTime = new Date().toISOString();
           let closePrice = openPrice;
           let commission = 0;
           let swap = 0;
           let netProfit = 0;
 
-          // Standard MT4 HTML statement layout
           if (cells.length >= 13) {
             closeTime = parseExnessDate(cells[8]);
-            closePrice = parseNumber(cells[9]);
-            commission = parseNumber(cells[10]);
-            swap = parseNumber(cells[11]);
-            netProfit = parseNumber(cells[12]);
-          } else if (cells.length >= 10) {
-            closePrice = parseNumber(cells[8]);
-            netProfit = parseNumber(cells[9]);
+            closePrice = parseFloat(cells[9]) || openPrice;
+            commission = parseFloat(cells[10]) || 0;
+            swap = parseFloat(cells[11]) || 0;
+            netProfit = parseFloat(cells[12]) || 0;
+          } else {
+            closePrice = parseFloat(cells[8]) || openPrice;
+            netProfit = parseFloat(cells[cells.length - 1]) || 0;
           }
 
           const pips = calculatePips(symbol, direction, openPrice, closePrice);
@@ -225,7 +219,7 @@ async function parseExnessHtml(file: File): Promise<ParseResult> {
           const session = autoDetectSession(openTime);
 
           trades.push({
-            id: `trd-${ticket}-${idx}`,
+            id: `trd-${ticket}-${Date.now()}-${idx}`,
             ticket,
             symbol,
             direction,
@@ -235,17 +229,17 @@ async function parseExnessHtml(file: File): Promise<ParseResult> {
             closePrice,
             stopLoss,
             takeProfit,
-            lotSize: lotSize || 0.1,
+            lotSize,
             netProfit: Number(netProfit.toFixed(2)),
             pips,
             rMultiple,
-            commission,
-            swap,
+            commission: Number(commission.toFixed(2)),
+            swap: Number(swap.toFixed(2)),
             session,
-            strategy: 'Exness HTML Import',
-            confluences: ['MT4/MT5 Statement'],
+            strategy: 'Statement Import',
+            confluences: ['MT5 HTML Report'],
             mistakes: [],
-            emotions: 'Neutral',
+            emotions: 'Disciplined',
             notes: `HTML Statement trade ticket #${ticket}`
           });
         });

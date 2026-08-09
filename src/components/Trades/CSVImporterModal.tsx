@@ -80,7 +80,7 @@ export const CSVImporterModal: React.FC<CSVImporterModalProps> = ({
           <div className="flex items-center gap-2">
             <Upload className="w-5 h-5 text-amber-400" />
             <div>
-              <h3 className="text-base font-bold text-white">Exness Trade Report Parser</h3>
+              <h3 className="text-base font-bold text-white">Trade Statement & Report Parser</h3>
               <p className="text-xs text-gray-400">Drag & drop MT4/MT5 CSV or HTML trade statement export files</p>
             </div>
           </div>
@@ -108,7 +108,7 @@ export const CSVImporterModal: React.FC<CSVImporterModalProps> = ({
               </div>
 
               <h4 className="text-sm font-bold text-white mb-1">
-                Drop your Exness MT4/MT5 CSV or HTML report here
+                Drop your MT4/MT5 or Broker CSV / HTML report here
               </h4>
               <p className="text-xs text-gray-400 max-w-md mb-4">
                 Supports automated Gold (XAUUSD / GOLDm) and Forex pair detection, lot extraction, swap, commission, and pip calculations.

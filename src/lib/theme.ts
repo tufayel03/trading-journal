@@ -29,8 +29,8 @@ export interface ThemeConfig {
 export const THEMES: Record<ThemeId, ThemeConfig> = {
   'exness-gold': {
     id: 'exness-gold',
-    name: 'Exness Gold & Emerald',
-    description: 'Official Exness dark layout with gold & emerald highlights',
+    name: 'HyperTrade Emerald Gold',
+    description: 'Flagship dark layout with gold & emerald highlights',
     isDark: true,
     previewColors: {
       bg: '#0B0F19',
@@ -193,3 +193,29 @@ export function loadSavedTheme(): ThemeId {
   }
   return 'exness-gold';
 }
+
+export type ZoomLevel = 90 | 95 | 100 | 105 | 110 | 115 | 120 | 125;
+
+export function applyZoom(zoom: ZoomLevel): void {
+  const root = document.documentElement;
+  root.style.setProperty('--app-zoom', `${zoom / 100}`);
+  try {
+    localStorage.setItem('exness_zoom_v1', String(zoom));
+  } catch (e) {
+    console.error('Failed to save zoom setting', e);
+  }
+}
+
+export function loadSavedZoom(): ZoomLevel {
+  try {
+    const saved = localStorage.getItem('exness_zoom_v1');
+    if (saved) {
+      const num = parseInt(saved, 10) as ZoomLevel;
+      if ([90, 95, 100, 105, 110, 115, 120, 125].includes(num)) {
+        return num;
+      }
+    }
+  } catch {}
+  return 115; // default zoomed-in for optimal widescreen legibility
+}
+

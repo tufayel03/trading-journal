@@ -106,7 +106,7 @@ export const KPIOverview: React.FC<KPIOverviewProps> = ({ stats }) => {
 
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4 shadow-md">
         <p className="text-xs text-[var(--text-secondary)] uppercase font-semibold text-[var(--accent-gold)] flex items-center gap-1">
-          <DollarSign className="w-3.5 h-3.5" /> Exness Gold Metric
+          <DollarSign className="w-3.5 h-3.5" /> Gold (XAUUSD) Metric
         </p>
         <div className="mt-1 text-[11px] text-[var(--text-primary)] font-mono space-y-0.5">
           <div className="flex justify-between">

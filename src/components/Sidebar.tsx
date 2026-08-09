@@ -18,7 +18,7 @@ import {
   PanelLeftOpen,
   Zap
 } from 'lucide-react';
-import { UserSettings } from '../types';
+import { UserSettings, AccountStatus } from '../types';
 
 interface SidebarProps {
   activeTab: 'dashboard' | 'trades' | 'psychology' | 'playbook';
@@ -33,6 +33,9 @@ interface SidebarProps {
   onExportJSON: () => void;
   isCollapsed: boolean;
   setIsCollapsed: (collapsed: boolean) => void;
+  accountStatus?: AccountStatus | null;
+  accounts?: AccountStatus[];
+  selectedAccount?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -47,9 +50,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
   openShortcutsModal,
   onExportJSON,
   isCollapsed,
-  setIsCollapsed
+  setIsCollapsed,
+  accountStatus,
+  accounts = [],
+  selectedAccount = 'ALL'
 }) => {
-  const currentEquity = settings.initialBalance + netProfit;
+  const currentSelectedAccountObj = accounts.find(a => String(a.login) === selectedAccount);
+  const isCentAccount = selectedAccount !== 'ALL' && (currentSelectedAccountObj?.isCent || currentSelectedAccountObj?.currency === 'USC');
+
+  const liveEquity = selectedAccount === 'ALL'
+    ? (accounts.length > 0 
+        ? accounts.reduce((sum, a) => sum + (a.usdEquity || (a.isCent || a.currency === 'USC' ? (a.equity / 100) : a.equity) || (a.isCent || a.currency === 'USC' ? (a.balance / 100) : a.balance) || 0), 0)
+        : (accountStatus?.equity !== undefined ? (accountStatus.isCent || accountStatus.currency === 'USC' ? accountStatus.equity / 100 : accountStatus.equity) : (settings.initialBalance + netProfit)))
+    : (currentSelectedAccountObj?.equity !== undefined 
+        ? currentSelectedAccountObj.equity 
+        : (accountStatus?.equity !== undefined ? accountStatus.equity : (settings.initialBalance + netProfit)));
+
+  const startingCapital = selectedAccount === 'ALL'
+    ? (accounts.length > 0
+        ? Math.max(0, Number((accounts.reduce((sum, a) => sum + (a.usdBalance || (a.isCent || a.currency === 'USC' ? (a.balance / 100) : a.balance) || 0), 0) - netProfit).toFixed(2)))
+        : (accountStatus?.balance !== undefined ? Math.max(0, Number(((accountStatus.isCent || accountStatus.currency === 'USC' ? accountStatus.balance / 100 : accountStatus.balance) - netProfit).toFixed(2))) : settings.initialBalance))
+    : (currentSelectedAccountObj?.balance !== undefined 
+        ? Math.max(0, Number((currentSelectedAccountObj.balance - (isCentAccount ? netProfit * 100 : netProfit)).toFixed(2))) 
+        : (accountStatus?.balance !== undefined ? Math.max(0, Number((accountStatus.balance - netProfit).toFixed(2))) : settings.initialBalance));
+
+  const displayProfit = isCentAccount ? (netProfit * 100) : netProfit;
   const isPositive = netProfit >= 0;
 
   const navItems = [
@@ -99,12 +124,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isCollapsed && (
               <div className="truncate">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-extrabold text-sm text-[var(--text-primary)] tracking-tight uppercase">EXNESS</span>
+                  <span className="font-extrabold text-sm text-[var(--text-primary)] tracking-tight uppercase">HYPERTRADE</span>
                   <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[var(--accent-gold)]/10 text-[var(--accent-gold)] border border-[var(--accent-gold)]/30 tracking-wider">
                     PRO
                   </span>
                 </div>
-                <p className="text-[10px] text-[var(--text-secondary)] truncate">Tradezella Alt Journal</p>
+                <p className="text-[10px] text-[var(--text-secondary)] truncate">AI Trading Journal</p>
               </div>
             )}
           </div>
@@ -124,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* MT5 Real-time Auto-sync */}
           <button
             onClick={openMT5SyncModal}
-            title="Auto-Sync Trades from Exness MT5"
+            title="Auto-Sync Trades from MT5"
             className={`w-full flex items-center justify-center gap-2 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold text-xs rounded-xl border border-emerald-500/30 transition-all ${
               isCollapsed ? 'px-0' : 'px-3'
             }`}
@@ -135,13 +160,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <button
             onClick={openImportModal}
-            title="Import Exness MT4/MT5 CSV or HTML (Shortcut: I)"
+            title="Import MT4/MT5/Broker CSV or HTML (Shortcut: I)"
             className={`w-full flex items-center justify-center gap-2 py-2 bg-[var(--accent-gold)] hover:bg-[var(--accent-gold-hover)] text-black font-bold text-xs rounded-xl shadow-[0_0_12px_rgba(245,158,11,0.25)] transition-all ${
               isCollapsed ? 'px-0' : 'px-3'
             }`}
           >
             <Upload className="w-4 h-4 stroke-[2.5] shrink-0" />
-            {!isCollapsed && <span>Import Exness CSV</span>}
+            {!isCollapsed && <span>Import Broker CSV</span>}
           </button>
 
           <button
@@ -214,24 +239,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                 isPositive ? 'bg-[var(--accent-green)]/15 text-[var(--accent-green)]' : 'bg-[var(--accent-red)]/15 text-[var(--accent-red)]'
               }`}>
-                {isPositive ? '+' : ''}${netProfit.toFixed(2)}
+                {isPositive ? '+' : ''}{isCentAccount ? `${displayProfit.toFixed(2)} USC` : `$${displayProfit.toFixed(2)}`}
               </span>
             </div>
 
-            <div className="text-base font-extrabold text-[var(--text-primary)] font-mono tracking-tight">
-              ${currentEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <div className="text-base font-extrabold text-[var(--text-primary)] font-mono tracking-tight flex items-baseline gap-1.5 flex-wrap">
+              <span>{isCentAccount ? `${liveEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USC` : `$${liveEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+              {isCentAccount && (
+                <span className="text-[10px] text-gray-400 font-normal">
+                  (≈ ${(liveEquity / 100).toFixed(2)} USD)
+                </span>
+              )}
             </div>
 
-            <div className="text-[10px] text-[var(--text-muted)] flex justify-between">
-              <span>Capital: ${settings.initialBalance.toLocaleString()}</span>
-              <span>Exness Real</span>
+            <div className="text-[10px] text-[var(--text-muted)] flex justify-between items-center">
+              <span>Capital: {isCentAccount ? `${startingCapital.toLocaleString()} USC` : `$${startingCapital.toLocaleString()}`}</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                isCentAccount ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+              }`}>
+                {selectedAccount === 'ALL' ? (accounts.length > 0 ? `${accounts.length} Accounts` : 'All Accounts') : (isCentAccount ? `Cent #${selectedAccount}` : `Acc #${selectedAccount}`)}
+              </span>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center p-2 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] text-center" title={`Equity: $${currentEquity.toFixed(2)}`}>
+          <div className="flex flex-col items-center justify-center p-2 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] text-center" title={`Equity: ${isCentAccount ? `${liveEquity.toFixed(2)} USC` : `$${liveEquity.toFixed(2)}`}`}>
             <DollarSign className="w-4 h-4 text-[var(--accent-green)]" />
             <span className={`text-[10px] font-bold ${isPositive ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
-              ${netProfit >= 0 ? '+' : ''}{Math.round(netProfit)}
+              {netProfit >= 0 ? '+' : ''}{isCentAccount ? `${Math.round(displayProfit)} USC` : `$${Math.round(netProfit)}`}
             </span>
           </div>
         )}

@@ -274,21 +274,19 @@ export function aggregateDailyPnL(trades: Trade[]): Map<string, DailyPnL> {
 
 /**
  * Aggregates losses & frequencies by Mistake type
+ * Calculates the total loss incurred on trades where each specific mistake was present.
  */
 export function aggregateMistakes(trades: Trade[]): MistakeSummary[] {
   const map = new Map<string, { count: number; totalLoss: number }>();
 
   trades.forEach(t => {
     if (!t.mistakes || t.mistakes.length === 0) return;
+    const tradeLoss = t.netProfit < 0 ? Math.abs(t.netProfit) : 0;
 
     t.mistakes.forEach(m => {
       const existing = map.get(m) || { count: 0, totalLoss: 0 };
       existing.count += 1;
-      
-      // If the trade was a loss, add to totalLoss
-      if (t.netProfit < 0) {
-        existing.totalLoss += Math.abs(t.netProfit);
-      }
+      existing.totalLoss += tradeLoss;
       map.set(m, existing);
     });
   });

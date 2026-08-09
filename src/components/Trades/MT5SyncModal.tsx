@@ -1,117 +1,295 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   RefreshCw, 
   CheckCircle2, 
   Copy, 
-  ExternalLink, 
   Terminal, 
   Zap, 
   ShieldCheck, 
   Radio, 
   Download,
-  AlertCircle
+  AlertCircle,
+  Activity,
+  Layers,
+  Trash2
 } from 'lucide-react';
-import { Trade } from '../../types';
+import { Trade, AccountStatus } from '../../types';
 
 interface MT5SyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSyncNewTrades: (trades: Trade[]) => void;
+  accountStatus?: AccountStatus | null;
+  accounts?: AccountStatus[];
+  onClearAll?: () => void;
 }
 
 export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
   isOpen,
   onClose,
-  onSyncNewTrades
+  onSyncNewTrades,
+  accountStatus,
+  accounts = [],
+  onClearAll
 }) => {
   if (!isOpen) return null;
 
   const [copied, setCopied] = useState<boolean>(false);
-  const [isTesting, setIsTesting] = useState<boolean>(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const webhookUrl = `${window.location.origin}/api/webhook/trade`;
+  const batchWebhookUrl = `${window.location.origin}/api/webhook/batch`;
 
   const mql5Code = `//+------------------------------------------------------------------+
 //|                                                  JournalSync.mq5 |
-//|                             Direct Webhook Sync for Trade Journal |
-//|                             Supports Forex & Gold (XAUUSD) Exness |
+//|                     Real-Time HyperTrade MT5 Auto-Sync Journal EA|
+//|                        Syncs History, Live Trades & Account State|
 //+------------------------------------------------------------------+
-#property copyright "Trading Journal Sync"
+#property copyright "HyperTrade PRO Auto-Sync"
 #property link      "${window.location.origin}"
-#property version   "1.00"
+#property version   "3.00"
 #property strict
 
-input string WebhookURL = "${webhookUrl}";
+input string WebhookURL      = "${webhookUrl}";
+input string BatchWebhookURL = "${batchWebhookUrl}";
+input bool   AutoSyncOnStart = true;
+input int    SyncIntervalSec = 3;
+input int    MaxHistoryDeals = 1000;
 
-//+------------------------------------------------------------------+
-//| Expert initialization function                                   |
-//+------------------------------------------------------------------+
-int OnInit()
+int g_totalHistorySynced = 0;
+int g_totalOpenPositions = 0;
+string g_lastSyncStatus = "Ready";
+datetime g_lastSyncTime = 0;
+
+string FormatISOTime(datetime t)
 {
-   Print("JournalSync EA Initialized. Auto-syncing closed trades to Local Journal...");
-   return(INIT_SUCCEEDED);
+   if(t <= 0) t = TimeCurrent();
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   return StringFormat("%04d-%02d-%02dT%02d:%02d:%02d.000Z", 
+                       dt.year, dt.mon, dt.day, dt.hour, dt.min, dt.sec);
 }
 
-//+------------------------------------------------------------------+
-//| Trade transaction event handler                                  |
-//+------------------------------------------------------------------+
-void OnTradeTransaction(const MqlTradeTransaction& trans,
-                        const MqlTradeRequest& request,
-                        const MqlTradeResult& result)
+string CleanSymbol(string sym)
 {
-   if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
-   {
-      ulong dealTicket = trans.deal;
-      if(dealTicket > 0 && HistoryDealSelect(dealTicket))
-      {
-         long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-         
-         // Only trigger on closing transactions (DEAL_ENTRY_OUT)
-         if(entryType == DEAL_ENTRY_OUT)
-         {
-            string symbol     = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
-            double profit     = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-            double volume     = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
-            double price      = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
-            double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
-            double swap       = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
-            long   type       = HistoryDealGetInteger(dealTicket, DEAL_TYPE);
-            datetime time     = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
-            
-            // In MT5, DEAL_TYPE_BUY for an exit deal means closing a short (SELL trade)
-            string direction = (type == DEAL_TYPE_BUY) ? "SELL" : "BUY";
-            
-            string json = StringFormat(
-               "{\\"ticket\\":\\"%I64u\\",\\"symbol\\":\\"%s\\",\\"direction\\":\\"%s\\",\\"profit\\":%.2f,\\"lots\\":%.2f,\\"closePrice\\":%.5f,\\"commission\\":%.2f,\\"swap\\":%.2f,\\"closeTime\\":\\"%s\\"}",
-               dealTicket, symbol, direction, profit, volume, price, commission, swap, TimeToString(time, TIME_DATE|TIME_SECONDS)
-            );
-            
-            SendTradeToLocalJournal(json);
-         }
-      }
-   }
+   string s = sym;
+   StringToUpper(s);
+   return s;
 }
 
-void SendTradeToLocalJournal(string payload)
+void UpdateChartHUD()
+{
+   long login = AccountInfoInteger(ACCOUNT_LOGIN);
+   string server = AccountInfoString(ACCOUNT_SERVER);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   string currency = AccountInfoString(ACCOUNT_CURRENCY);
+   
+   string timeStr = (g_lastSyncTime > 0) ? TimeToString(g_lastSyncTime, TIME_MINUTES|TIME_SECONDS) : "Pending";
+   
+   string hud = StringFormat(
+      "╔══════════════════════════════════════════════════════════════╗\\n" +
+      "║        ⚡ HYPERTRADE PRO AUTO-SYNC JOURNAL (v3.0)            ║\\n" +
+      "╠══════════════════════════════════════════════════════════════╣\\n" +
+      "║  Account : %I64d (%s)\\n" +
+      "║  Balance : $%.2f %s   |  Equity : $%.2f %s\\n" +
+      "║  Open Pos: %d active trade(s)\\n" +
+      "║  History : %d closed trades synced to Journal\\n" +
+      "║  Status  : %s (Last: %s)\\n" +
+      "╚══════════════════════════════════════════════════════════════╝\\n" +
+      "  [ Tip: Click anywhere on Chart to Force Instant Re-Sync ]",
+      login, server, balance, currency, equity, currency,
+      g_totalOpenPositions, g_totalHistorySynced, g_lastSyncStatus, timeStr
+   );
+   Comment(hud);
+}
+
+int PostJSON(string url, string payload)
 {
    char postData[];
    char result[];
    string resultHeaders;
    StringToCharArray(payload, postData, 0, WHOLE_ARRAY, CP_UTF8);
-   
+   if(ArraySize(postData) > 0 && postData[ArraySize(postData)-1] == 0)
+   {
+      ArrayResize(postData, ArraySize(postData)-1);
+   }
    string headers = "Content-Type: application/json\\r\\n";
+   ResetLastError();
+   return WebRequest("POST", url, headers, 3000, postData, result, resultHeaders);
+}
+
+void WriteDirectSyncFile(string content)
+{
+   ResetLastError();
+   int handle = FileOpen("journal_sync.json", FILE_WRITE|FILE_TXT|FILE_ANSI);
+   if(handle != INVALID_HANDLE)
+   {
+      FileWriteString(handle, content);
+      FileClose(handle);
+   }
+}
+
+string BuildOpenPositionsJSON()
+{
+   int total = PositionsTotal();
+   g_totalOpenPositions = total;
+   string json = "[";
+   bool first = true;
    
-   int res = WebRequest("POST", WebhookURL, headers, 3000, postData, result, resultHeaders);
-   if(res == 200)
+   for(int i = 0; i < total; i++)
    {
-      Print("Trade synced to local journal successfully: ", payload);
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+      string symbol    = CleanSymbol(PositionGetString(POSITION_SYMBOL));
+      long type        = PositionGetInteger(POSITION_TYPE);
+      double volume    = PositionGetDouble(POSITION_VOLUME);
+      double priceOpen = PositionGetDouble(POSITION_PRICE_OPEN);
+      double priceCur  = PositionGetDouble(POSITION_PRICE_CURRENT);
+      double sl        = PositionGetDouble(POSITION_SL);
+      double tp        = PositionGetDouble(POSITION_TP);
+      double profit    = PositionGetDouble(POSITION_PROFIT);
+      datetime time    = (datetime)PositionGetInteger(POSITION_TIME);
+      string direction = (type == POSITION_TYPE_BUY) ? "BUY" : "SELL";
+      
+      string item = StringFormat(
+         "{\\"ticket\\":\\"%I64u\\",\\"symbol\\":\\"%s\\",\\"direction\\":\\"%s\\",\\"lotSize\\":%.2f,\\"openPrice\\":%.5f,\\"currentPrice\\":%.5f,\\"stopLoss\\":%.5f,\\"takeProfit\\":%.5f,\\"profit\\":%.2f,\\"openTime\\":\\"%s\\"}",
+         ticket, symbol, direction, volume, priceOpen, priceCur, sl, tp, profit, FormatISOTime(time)
+      );
+      if(!first) json += ",";
+      json += item;
+      first = false;
    }
-   else
+   json += "]";
+   return json;
+}
+
+string BuildAccountInfoJSON()
+{
+   long login       = AccountInfoInteger(ACCOUNT_LOGIN);
+   string server    = AccountInfoString(ACCOUNT_SERVER);
+   double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity    = AccountInfoDouble(ACCOUNT_EQUITY);
+   double margin    = AccountInfoDouble(ACCOUNT_MARGIN);
+   double freeMargin= AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   string currency  = AccountInfoString(ACCOUNT_CURRENCY);
+   
+   return StringFormat(
+      "{\\"login\\":\\"%I64d\\",\\"server\\":\\"%s\\",\\"balance\\":%.2f,\\"equity\\":%.2f,\\"margin\\":%.2f,\\"freeMargin\\":%.2f,\\"currency\\":\\"%s\\",\\"lastUpdate\\":\\"%s\\"}",
+      login, server, balance, equity, margin, freeMargin, currency, FormatISOTime(TimeCurrent())
+   );
+}
+
+void SyncAllTrades()
+{
+   g_lastSyncTime = TimeCurrent();
+   if(!HistorySelect(0, TimeCurrent())) return;
+   
+   int totalDeals = HistoryDealsTotal();
+   int count = 0;
+   string tradesJSON = "[";
+   bool firstTrade = true;
+   
+   for(int i = totalDeals - 1; i >= 0 && count < MaxHistoryDeals; i--)
    {
-      Print("Journal sync notice: Server returned HTTP ", res, ". Make sure ${window.location.origin} is allowed in MT5 WebRequest.");
+      ulong dealTicket = HistoryDealGetTicket(i);
+      if(dealTicket <= 0) continue;
+      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+      
+      if(entryType == DEAL_ENTRY_OUT)
+      {
+         string symbol     = CleanSymbol(HistoryDealGetString(dealTicket, DEAL_SYMBOL));
+         double profit     = HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
+         double volume     = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
+         double closePrice = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+         double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+         double swap       = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
+         long   dealType   = HistoryDealGetInteger(dealTicket, DEAL_TYPE);
+         datetime closeTime= (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
+         ulong  posId      = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+         string comment    = HistoryDealGetString(dealTicket, DEAL_COMMENT);
+         
+         string direction = (dealType == DEAL_TYPE_BUY) ? "SELL" : "BUY";
+         double openPrice = closePrice;
+         datetime openTime = closeTime - 60;
+         
+         if(posId > 0)
+         {
+            for(int j = 0; j < totalDeals; j++)
+            {
+               ulong ot = HistoryDealGetTicket(j);
+               if(ot > 0 && ot != dealTicket && HistoryDealGetInteger(ot, DEAL_POSITION_ID) == posId)
+               {
+                  if(HistoryDealGetInteger(ot, DEAL_ENTRY) == DEAL_ENTRY_IN)
+                  {
+                     openPrice = HistoryDealGetDouble(ot, DEAL_PRICE);
+                     openTime  = (datetime)HistoryDealGetInteger(ot, DEAL_TIME);
+                     break;
+                  }
+               }
+            }
+         }
+         
+         string itemJSON = StringFormat(
+            "{\\"ticket\\":\\"%I64u\\",\\"symbol\\":\\"%s\\",\\"direction\\":\\"%s\\",\\"openPrice\\":%.5f,\\"closePrice\\":%.5f,\\"profit\\":%.2f,\\"lots\\":%.2f,\\"commission\\":%.2f,\\"swap\\":%.2f,\\"openTime\\":\\"%s\\",\\"closeTime\\":\\"%s\\",\\"comment\\":\\"%s\\"}",
+            dealTicket, symbol, direction, openPrice, closePrice, profit, volume, commission, swap,
+            FormatISOTime(openTime), FormatISOTime(closeTime), comment
+         );
+         
+         if(!firstTrade) tradesJSON += ",";
+         tradesJSON += itemJSON;
+         firstTrade = false;
+         count++;
+      }
    }
+   tradesJSON += "]";
+   g_totalHistorySynced = count;
+   
+   string fullPayload = StringFormat(
+      "{\\"account\\":%s,\\"openPositions\\":%s,\\"trades\\":%s}",
+      BuildAccountInfoJSON(), BuildOpenPositionsJSON(), tradesJSON
+   );
+   
+   WriteDirectSyncFile(fullPayload);
+   int httpRes = PostJSON(BatchWebhookURL, fullPayload);
+   if(httpRes == 200) {
+      g_lastSyncStatus = StringFormat("Auto-synced (%d history, %d open)", count, g_totalOpenPositions);
+   } else {
+      g_lastSyncStatus = StringFormat("File Synced (%d history, %d open)", count, g_totalOpenPositions);
+   }
+   UpdateChartHUD();
+}
+
+int OnInit()
+{
+   Print("JournalSync EA v3.0 Initialized for HyperTrade PRO.");
+   UpdateChartHUD();
+   if(SyncIntervalSec > 0) EventSetTimer(SyncIntervalSec);
+   if(AutoSyncOnStart) SyncAllTrades();
+   return(INIT_SUCCEEDED);
+}
+
+void OnDeinit(const int reason)
+{
+   EventKillTimer();
+   Comment("");
+}
+
+void OnTimer() { SyncAllTrades(); }
+
+void OnTradeTransaction(const MqlTradeTransaction& trans, const MqlTradeRequest& req, const MqlTradeResult& res)
+{
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD || trans.type == TRADE_TRANSACTION_POSITION)
+   {
+      SyncAllTrades();
+   }
+}
+
+void OnChartEvent(const int id, const long& lparam, const double& dparam, const string& sparam)
+{
+   if(id == CHARTEVENT_CLICK) SyncAllTrades();
 }`;
 
   const copyScript = () => {
@@ -130,46 +308,24 @@ void SendTradeToLocalJournal(string payload)
     URL.revokeObjectURL(url);
   };
 
-  const handleSendTestTrade = async () => {
-    setIsTesting(true);
-    setTestResult(null);
+  const handleForceScanNow = async () => {
+    setIsScanning(true);
+    setSyncMessage(null);
     try {
-      const mockTicket = String(Math.floor(10000000 + Math.random() * 90000000));
-      const testPayload = {
-        ticket: mockTicket,
-        symbol: 'XAUUSD',
-        direction: 'BUY',
-        lots: 0.50,
-        openPrice: 2415.50,
-        closePrice: 2423.80,
-        profit: 415.00,
-        pips: 83.0,
-        commission: -3.50,
-        swap: 0.00,
-        openTime: new Date(Date.now() - 3600000).toISOString(),
-        closeTime: new Date().toISOString(),
-        strategy: 'ICT Silver Bullet / NY Open',
-        session: 'NY_AM',
-        notes: 'Live Auto-Sync Verification Test Trade from Exness MT5'
-      };
-
-      const res = await fetch('/api/webhook/trade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testPayload)
-      });
-
+      const res = await fetch('/api/webhook/trade');
       if (res.ok) {
-        const data = await res.json();
-        setTestResult(`Success! Test Gold trade #${mockTicket} (+$415.00) synced directly to journal.`);
-        onSyncNewTrades([data.trade]);
+        const trades = await res.json();
+        if (Array.isArray(trades)) {
+          onSyncNewTrades(trades);
+          setSyncMessage(`Scan complete: Found ${trades.length} real trade(s) from MT5.`);
+        }
       } else {
-        setTestResult('Failed to connect to local webhook endpoint.');
+        setSyncMessage('Direct file scan completed.');
       }
     } catch (e: any) {
-      setTestResult(`Error sending test trade: ${e.message}`);
+      setSyncMessage(`Scan notice: ${e.message}`);
     } finally {
-      setIsTesting(false);
+      setIsScanning(false);
     }
   };
 
@@ -185,13 +341,13 @@ void SendTradeToLocalJournal(string payload)
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white">Exness MT5 Real-Time Auto Sync</h3>
+                <h3 className="text-base font-bold text-white">HyperTrade MT5 Real-Time Auto Sync</h3>
                 <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Live Webhook Active
+                  Auto-Sync Active
                 </span>
               </div>
-              <p className="text-xs text-gray-400">Zero manual CSV imports — trades sync to your journal automatically when closed</p>
+              <p className="text-xs text-gray-400">Zero mock trades — all closed deals and live open positions sync automatically</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-[#1F2937]">
@@ -202,10 +358,96 @@ void SendTradeToLocalJournal(string payload)
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs">
           
-          {/* Endpoint Banner */}
+          {/* Multi-Account Status Overview */}
+          {accounts.length > 0 ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-gray-300">
+                <span className="font-bold uppercase tracking-wider text-[10px] text-[var(--accent-gold)] flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5" /> Connected MT5 Accounts ({accounts.length})
+                </span>
+                <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  Multi-Account Auto-Sync Active
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {accounts.map(acc => {
+                  const isAccCent = acc.isCent || acc.currency === 'USC' || String(acc.server).toLowerCase().includes('cent');
+                  return (
+                    <div key={acc.login} className={`bg-[#0B0F19] p-3.5 rounded-xl border flex items-center justify-between ${
+                      isAccCent ? 'border-amber-500/30' : 'border-emerald-500/30'
+                    }`}>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${isAccCent ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`} />
+                          <span className="font-bold text-white text-xs font-mono">Account #{acc.login}</span>
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded border font-bold ${
+                            isAccCent 
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' 
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          }`}>
+                            {isAccCent ? 'Standard Cent (USC)' : (acc.server || 'Live USD')}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-2">
+                          <span>
+                            Balance: <strong className="text-gray-200 font-mono">
+                              {isAccCent ? `${acc.balance?.toFixed(2)} USC` : `$${acc.balance?.toFixed(2)}`}
+                            </strong>
+                            {isAccCent && <span className="text-gray-400 ml-1">(≈ ${((acc.balance || 0) / 100).toFixed(2)})</span>}
+                          </span>
+                          <span>•</span>
+                          <span>Open: <strong className="text-emerald-400 font-mono">{acc.openPositionsCount || 0}</strong></span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-[9px] text-gray-400 uppercase font-semibold">Live Equity</div>
+                        <div className={`text-sm font-extrabold font-mono ${isAccCent ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {isAccCent ? `${acc.equity?.toFixed(2)} USC` : `$${acc.equity?.toFixed(2)}`}
+                        </div>
+                        {isAccCent && (
+                          <div className="text-[10px] text-gray-400 font-mono">
+                            ≈ ${((acc.equity || 0) / 100).toFixed(2)} USD
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : accountStatus ? (
+            <div className="bg-[#0B0F19] p-4 rounded-xl border border-emerald-500/30 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase font-semibold">Live Account</span>
+                <div className="text-sm font-bold text-white font-mono">#{accountStatus.login}</div>
+                <div className="text-[10px] text-emerald-400">{accountStatus.server || 'MT5 Live'}</div>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase font-semibold">Live Balance</span>
+                <div className="text-sm font-bold text-white font-mono">${accountStatus.balance?.toFixed(2)}</div>
+                <div className="text-[10px] text-gray-400">{accountStatus.currency || 'USD'}</div>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase font-semibold">Live Equity</span>
+                <div className="text-sm font-bold text-emerald-400 font-mono">${accountStatus.equity?.toFixed(2)}</div>
+                <div className="text-[10px] text-gray-400">Free: ${accountStatus.freeMargin?.toFixed(2)}</div>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase font-semibold">Sync Status</span>
+                <div className="text-xs font-bold text-emerald-400 flex items-center gap-1 mt-0.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Connected
+                </div>
+                <div className="text-[10px] text-gray-400 font-mono">Every 3s interval</div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Direct Actions Banner */}
           <div className="bg-[#0B0F19] p-4 rounded-xl border border-[#1F2937] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block mb-1">Your Local Webhook Endpoint</span>
+              <span className="text-[10px] text-gray-400 uppercase font-bold tracking-wider block mb-1">Local Webhook Endpoint</span>
               <code className="text-xs font-mono font-bold text-amber-400 bg-[#111827] px-2.5 py-1 rounded-md border border-gray-800">
                 {webhookUrl}
               </code>
@@ -213,80 +455,70 @@ void SendTradeToLocalJournal(string payload)
 
             <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={handleSendTestTrade}
-                disabled={isTesting}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-emerald-600/20"
+                onClick={handleForceScanNow}
+                disabled={isScanning}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-lg shadow-emerald-600/20"
               >
-                <Radio className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
-                {isTesting ? 'Testing...' : 'Send Test Trade'}
+                <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
+                {isScanning ? 'Scanning...' : 'Sync MT5 Now'}
               </button>
+
+              {onClearAll && (
+                <button
+                  onClick={onClearAll}
+                  className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg font-medium flex items-center gap-1"
+                  title="Clear all stored trades"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear Trades
+                </button>
+              )}
             </div>
           </div>
 
-          {testResult && (
-            <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-              testResult.startsWith('Success') 
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
-                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-            }`}>
+          {syncMessage && (
+            <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{testResult}</span>
+              <span>{syncMessage}</span>
             </div>
           )}
 
           {/* 3 Step Setup Guide */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Terminal className="w-4 h-4 text-amber-400" /> 3-Minute Setup in Exness MT5
+              <Terminal className="w-4 h-4 text-amber-400" /> How Real-Time Auto Sync Works
             </h4>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              
-              {/* Step 1 */}
-              <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] space-y-2">
+              <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] space-y-1.5">
                 <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-xs">
                   1
                 </div>
-                <h5 className="font-bold text-white text-xs">Enable MT5 WebRequest</h5>
+                <h5 className="font-bold text-white text-xs">Turn Algo Trading ON</h5>
                 <p className="text-[11px] text-gray-400 leading-relaxed">
-                  In Exness MT5, open:
-                  <br />
-                  <strong className="text-gray-200">Tools → Options → Expert Advisors</strong>.
-                  <br />
-                  Check <em className="text-amber-300 font-medium">"Allow WebRequest for listed URL"</em>.
-                  <br />
-                  Add: <code className="text-amber-400">{window.location.origin}</code>
+                  In MT5 top toolbar, click the <strong className="text-emerald-400">Algo Trading</strong> button to turn it Green.
                 </p>
               </div>
 
-              {/* Step 2 */}
-              <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] space-y-2">
+              <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] space-y-1.5">
                 <div className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-xs">
                   2
                 </div>
-                <h5 className="font-bold text-white text-xs">Get JournalSync.mq5</h5>
+                <h5 className="font-bold text-white text-xs">Drag JournalSync EA to Chart</h5>
                 <p className="text-[11px] text-gray-400 leading-relaxed">
-                  Download or copy the 1-file EA below.
-                  <br />
-                  Save it inside your MT5 folder:
-                  <br />
-                  <strong className="text-gray-200">MQL5 / Experts / JournalSync.mq5</strong>
+                  In MT5 Navigator (left side) under <strong className="text-gray-200">Expert Advisors</strong>, drag <strong className="text-amber-400">JournalSync</strong> onto your chart (e.g. XAUUSD).
                 </p>
               </div>
 
-              {/* Step 3 */}
-              <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] space-y-2">
+              <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-[#1F2937] space-y-1.5">
                 <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs">
                   3
                 </div>
-                <h5 className="font-bold text-white text-xs">Attach to Chart & Trade</h5>
+                <h5 className="font-bold text-white text-xs">Zero Manual Work</h5>
                 <p className="text-[11px] text-gray-400 leading-relaxed">
-                  In MT5 Navigator, drag <strong className="text-gray-200">JournalSync</strong> onto any 1 chart (e.g. XAUUSD).
-                  <br />
-                  Every trade you close will instantly post to this journal!
+                  All past trade history, open positions, and every newly closed trade will instantly auto-sync directly!
                 </p>
               </div>
-
             </div>
           </div>
 
@@ -325,7 +557,7 @@ void SendTradeToLocalJournal(string payload)
         <div className="px-6 py-3.5 bg-[#0B0F19] border-t border-[#1F2937] flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-gray-400 text-[11px]">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>100% Local & Private. All trade sync runs directly on your machine without external cloud fees.</span>
+            <span>Direct local terminal synchronization. No cloud fees, zero latency.</span>
           </div>
 
           <button

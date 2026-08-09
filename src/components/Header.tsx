@@ -42,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-[#111827] border-b border-[#1F2937] sticky top-0 z-30 shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8 2xl:px-10">
         <div className="flex items-center justify-between h-16 gap-4">
           
           {/* Logo & Brand */}
@@ -52,12 +52,12 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-base text-white tracking-tight uppercase">EXNESS</span>
+                <span className="font-extrabold text-base text-white tracking-tight uppercase">HYPERTRADE</span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#F59E0B]/10 text-[#F59E0B] border border-[#F59E0B]/30 tracking-wider">
-                  XAUUSD & FOREX
+                  PRO JOURNAL
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 -mt-0.5">Professional Trade Journal & Analytics</p>
+              <p className="text-[10px] text-slate-400 -mt-0.5">Professional AI Trading Journal & Analytics</p>
             </div>
           </div>
 
@@ -141,14 +141,14 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden sm:inline">Manual Entry</span>
             </button>
 
-            {/* Import Exness CSV */}
+            {/* Import Broker CSV */}
             <button
               onClick={openImportModal}
-              title="Import Exness MT4/MT5 CSV or HTML (Shortcut: I)"
+              title="Import MT4/MT5/Broker CSV or HTML (Shortcut: I)"
               className="flex items-center gap-1.5 px-4 py-2 bg-[#F59E0B] hover:bg-[#d97706] text-black text-xs font-bold rounded-lg shadow-[0_0_10px_rgba(245,158,11,0.2)] transition-all"
             >
               <Upload className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Import Exness CSV</span>
+              <span>Import Broker CSV</span>
             </button>
 
             {/* Auxiliary Tools */}
