@@ -186,8 +186,9 @@ export interface AccountStatus {
   openPositionsCount?: number;
   totalSyncedDeals?: number;
   accountName?: string;
-  status?: 'connected' | 'disconnected';
+  status?: 'connected' | 'disconnected' | 'archived';
   disconnectedAt?: string;
+  archivedAt?: string;
 }
 
 export interface MultiAccountPayload {

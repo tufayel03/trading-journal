@@ -62,6 +62,10 @@ function mt5SyncPlugin(): Plugin {
         const closeTime = trade.closeTime || new Date().toISOString();
 
         const accountLogin = trade.accountLogin ? String(trade.accountLogin) : (defaultAccount?.login ? String(defaultAccount.login) : '276133463');
+        if (accountLogin === '160096169') {
+          return null;
+        }
+
         const accountServer = trade.accountServer || (defaultAccount?.server ? String(defaultAccount.server) : 'Live MT5');
         const accountCurrency = String(trade.accountCurrency || defaultAccount?.currency || 'USD').toUpperCase();
 
@@ -158,7 +162,7 @@ function mt5SyncPlugin(): Plugin {
           if (Array.isArray(raw.openPositions)) openPositionsData = raw.openPositions;
         }
 
-        const parsedTrades = tradesList.map(t => parseIncomingTrade(t, accountData));
+        const parsedTrades = tradesList.map(t => parseIncomingTrade(t, accountData)).filter(Boolean);
         let changed = false;
 
         parsedTrades.forEach(nt => {
@@ -468,7 +472,8 @@ function mt5SyncPlugin(): Plugin {
               } else {
                 acc.status = 'connected';
                 delete acc.disconnectedAt;
-                // Unblock from removed list if previously removed
+                delete acc.archivedAt;
+                // Unblock from removed list
                 if (inMemoryStatus.removedAccounts) {
                   inMemoryStatus.removedAccounts = inMemoryStatus.removedAccounts.filter((k: string) => k !== loginKey);
                 }
@@ -487,6 +492,79 @@ function mt5SyncPlugin(): Plugin {
             }
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: 'Account not found' }));
+          } catch (err: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        });
+      };
+
+      const handleAccountAddReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        let body = '';
+        req.on('data', (chunk: string) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const { login, server, currency, isCent } = JSON.parse(body || '{}');
+            const loginKey = String(login).trim();
+            if (!loginKey) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: 'Login is required' }));
+              return;
+            }
+
+            // Unblock from removed list
+            if (inMemoryStatus.removedAccounts) {
+              inMemoryStatus.removedAccounts = inMemoryStatus.removedAccounts.filter((k: string) => k !== loginKey);
+            }
+
+            inMemoryStatus.accounts = inMemoryStatus.accounts || {};
+            const existing = inMemoryStatus.accounts[loginKey];
+
+            inMemoryStatus.accounts[loginKey] = {
+              ...(existing || {}),
+              login: loginKey,
+              server: server || existing?.server || 'Exness-MT5Real26',
+              currency: currency || existing?.currency || 'USD',
+              balance: existing?.balance || 0,
+              equity: existing?.equity || 0,
+              margin: existing?.margin || 0,
+              freeMargin: existing?.freeMargin || 0,
+              isCent: isCent !== undefined ? isCent : (existing?.isCent || false),
+              status: 'connected',
+              lastUpdate: new Date().toISOString()
+            };
+            delete inMemoryStatus.accounts[loginKey].disconnectedAt;
+            delete inMemoryStatus.accounts[loginKey].archivedAt;
+
+            inMemoryStatus.account = inMemoryStatus.accounts[loginKey];
+
+            try {
+              fs.writeFileSync(statusFile, JSON.stringify(inMemoryStatus, null, 2), 'utf-8');
+            } catch {}
+
+            // Trigger terminal scan for this account
+            try {
+              scanMT5DirectFiles();
+            } catch {}
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              success: true, 
+              message: `Account #${loginKey} connected to live auto sync!`,
+              account: inMemoryStatus.accounts[loginKey],
+              accounts: inMemoryStatus.accounts,
+              trades: inMemoryTrades
+            }));
           } catch (err: any) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: false, error: err.message }));
@@ -564,6 +642,8 @@ function mt5SyncPlugin(): Plugin {
       server.middlewares.use('/api/sync/clear', handleClearReq);
       server.middlewares.use('/api/account/toggle', handleAccountToggleReq);
       server.middlewares.use('/api/account/remove', handleAccountRemoveReq);
+      server.middlewares.use('/api/account/add', handleAccountAddReq);
+      server.middlewares.use('/api/account/restore', handleAccountAddReq);
     }
   };
 }

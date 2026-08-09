@@ -41,6 +41,7 @@ interface TopBarProps {
   onSelectAccount?: (login: string) => void;
   onToggleAccountStatus?: (login: string, action: 'connect' | 'disconnect') => void;
   onRemoveAccount?: (login: string, type: 'soft' | 'hard') => void;
+  onAddAccount?: (login: string, server?: string, currency?: string, isCent?: boolean) => void;
   currentZoom?: ZoomLevel;
   onZoomChange?: (zoom: ZoomLevel) => void;
 }
@@ -62,6 +63,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onSelectAccount,
   onToggleAccountStatus,
   onRemoveAccount,
+  onAddAccount,
   currentZoom = 115,
   onZoomChange
 }) => {

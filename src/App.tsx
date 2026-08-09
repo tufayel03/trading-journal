@@ -618,6 +618,46 @@ export default function App() {
     setTimeout(() => setLiveSyncToast(null), 4500);
   };
 
+  const handleAddOrRestoreAccount = async (login: string, server?: string, currency?: string, isCent?: boolean) => {
+    try {
+      const res = await fetch('/api/account/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login, server, currency, isCent })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accounts) {
+          setAccountsMap(data.accounts);
+        }
+        if (data.trades && Array.isArray(data.trades) && data.trades.length > 0) {
+          updateTradesState(data.trades);
+        }
+      }
+    } catch {}
+
+    setAccountsMap(prev => ({
+      ...prev,
+      [login]: {
+        login,
+        server: server || prev[login]?.server || 'Exness-MT5Real26',
+        balance: prev[login]?.balance || 0,
+        equity: prev[login]?.equity || 0,
+        margin: prev[login]?.margin || 0,
+        freeMargin: prev[login]?.freeMargin || 0,
+        currency: currency || prev[login]?.currency || 'USD',
+        isCent: isCent !== undefined ? isCent : (prev[login]?.isCent || false),
+        status: 'connected',
+        lastUpdate: new Date().toISOString()
+      }
+    }));
+
+    setSelectedAccount(login);
+    setFilters(prev => ({ ...prev, account: login }));
+    setLiveSyncToast(`Account #${login} connected & restored to live auto sync!`);
+    setTimeout(() => setLiveSyncToast(null), 4500);
+  };
+
   return (
     <div className="flex h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)] font-sans overflow-hidden transition-colors duration-300">
       
@@ -737,6 +777,7 @@ export default function App() {
           }}
           onToggleAccountStatus={handleToggleAccountStatus}
           onRemoveAccount={handleRemoveAccount}
+          onAddAccount={handleAddOrRestoreAccount}
           currentZoom={currentZoom}
           onZoomChange={setCurrentZoom}
         />
@@ -861,6 +902,7 @@ export default function App() {
         onClearAll={handleClearAllTrades}
         onToggleAccountStatus={handleToggleAccountStatus}
         onRemoveAccount={handleRemoveAccount}
+        onAddAccount={handleAddOrRestoreAccount}
       />
 
       <SettingsModal

@@ -14,7 +14,9 @@ import {
   Layers,
   Trash2,
   Archive,
-  AlertTriangle
+  AlertTriangle,
+  Plus,
+  ArrowRight
 } from 'lucide-react';
 import { Trade, AccountStatus } from '../../types';
 
@@ -27,6 +29,7 @@ interface MT5SyncModalProps {
   onClearAll?: () => void;
   onToggleAccountStatus?: (login: string, action: 'connect' | 'disconnect') => void;
   onRemoveAccount?: (login: string, type: 'soft' | 'hard') => void;
+  onAddAccount?: (login: string, server?: string, currency?: string, isCent?: boolean) => void;
 }
 
 export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
@@ -37,7 +40,8 @@ export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
   accounts = [],
   onClearAll,
   onToggleAccountStatus,
-  onRemoveAccount
+  onRemoveAccount,
+  onAddAccount
 }) => {
   if (!isOpen) return null;
 
@@ -45,6 +49,9 @@ export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [modalAccountToRemove, setModalAccountToRemove] = useState<{ login: string } | null>(null);
+  const [newLoginInput, setNewLoginInput] = useState<string>('');
+  const [newIsCent, setNewIsCent] = useState<boolean>(false);
+  const [showAddBox, setShowAddBox] = useState<boolean>(false);
 
   const webhookUrl = `${window.location.origin}/api/webhook/trade`;
   const batchWebhookUrl = `${window.location.origin}/api/webhook/batch`;
@@ -381,6 +388,84 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                 Even if Exness or MT5 deletes/archives closed deals after 30–90 days, your trade history is <strong>permanently preserved in your local journal database</strong>. Every newly connected or synced account adds to this vault without ever overwriting historical trades.
               </p>
             </div>
+          </div>
+
+          {/* Add / Reconnect MT5 Account Section */}
+          <div className="bg-[#0B0F19] p-3.5 rounded-xl border border-dashed border-[#1F2937] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-white">
+                <Plus className="w-4 h-4 text-[var(--accent-gold)]" />
+                <span>Connect or Restore MT5 Account</span>
+              </div>
+              {!showAddBox && (
+                <button
+                  onClick={() => setShowAddBox(true)}
+                  className="px-2.5 py-1 rounded bg-[var(--accent-gold)]/10 hover:bg-[var(--accent-gold)]/20 text-[var(--accent-gold)] text-xs font-bold transition-colors"
+                >
+                  + Add Account
+                </button>
+              )}
+            </div>
+
+            {showAddBox && (
+              <div className="pt-2 border-t border-gray-800 space-y-3 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                      MT5 Account Login Number
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 276133463"
+                      value={newLoginInput}
+                      onChange={(e) => setNewLoginInput(e.target.value)}
+                      className="w-full bg-[#111827] border border-gray-700 text-white rounded-lg px-3 py-1.5 text-xs font-mono focus:border-[var(--accent-gold)] outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-4 sm:pt-4">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={newIsCent}
+                        onChange={(e) => setNewIsCent(e.target.checked)}
+                        className="rounded bg-[#111827] border-gray-700 text-amber-500"
+                      />
+                      <span className="text-[11px]">Cent (USC)</span>
+                    </label>
+
+                    <button
+                      onClick={async () => {
+                        const trimmed = newLoginInput.trim();
+                        if (!trimmed) return;
+                        if (onAddAccount) {
+                          await onAddAccount(
+                            trimmed,
+                            newIsCent ? 'Exness-MT5Real20' : 'Exness-MT5Real26',
+                            newIsCent ? 'USC' : 'USD',
+                            newIsCent
+                          );
+                        }
+                        setNewLoginInput('');
+                        setShowAddBox(false);
+                        handleForceScanNow();
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg shadow flex items-center gap-1 transition-colors shrink-0"
+                    >
+                      <span>Connect & Sync</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                    
+                    <button
+                      onClick={() => setShowAddBox(false)}
+                      className="px-2.5 py-1.5 text-gray-400 hover:text-white text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Multi-Account Status Overview */}
