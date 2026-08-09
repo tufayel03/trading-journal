@@ -192,8 +192,8 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
         fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
       },
       grid: {
-        vertLines: { color: themeColors.gridColor },
-        horzLines: { color: themeColors.gridColor }
+        vertLines: { visible: false },
+        horzLines: { visible: false }
       },
       crosshair: {
         mode: CrosshairMode.Normal,
