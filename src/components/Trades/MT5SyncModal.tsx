@@ -12,7 +12,9 @@ import {
   AlertCircle,
   Activity,
   Layers,
-  Trash2
+  Trash2,
+  Archive,
+  AlertTriangle
 } from 'lucide-react';
 import { Trade, AccountStatus } from '../../types';
 
@@ -24,6 +26,7 @@ interface MT5SyncModalProps {
   accounts?: AccountStatus[];
   onClearAll?: () => void;
   onToggleAccountStatus?: (login: string, action: 'connect' | 'disconnect') => void;
+  onRemoveAccount?: (login: string, type: 'soft' | 'hard') => void;
 }
 
 export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
@@ -33,13 +36,15 @@ export const MT5SyncModal: React.FC<MT5SyncModalProps> = ({
   accountStatus,
   accounts = [],
   onClearAll,
-  onToggleAccountStatus
+  onToggleAccountStatus,
+  onRemoveAccount
 }) => {
   if (!isOpen) return null;
 
   const [copied, setCopied] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [modalAccountToRemove, setModalAccountToRemove] = useState<{ login: string } | null>(null);
 
   const webhookUrl = `${window.location.origin}/api/webhook/trade`;
   const batchWebhookUrl = `${window.location.origin}/api/webhook/batch`;
@@ -450,18 +455,32 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                         <span className="text-[10px] text-gray-400">
                           {isDisconnected ? 'Trades saved in vault' : 'Live real-time auto sync'}
                         </span>
-                        {onToggleAccountStatus && (
-                          <button
-                            onClick={() => onToggleAccountStatus(String(acc.login), isDisconnected ? 'connect' : 'disconnect')}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
-                              isDisconnected 
-                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md' 
-                                : 'bg-slate-800 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-gray-700'
-                            }`}
-                          >
-                            {isDisconnected ? 'Reconnect Sync' : 'Disconnect Account'}
-                          </button>
-                        )}
+                        
+                        <div className="flex items-center gap-2">
+                          {onToggleAccountStatus && (
+                            <button
+                              onClick={() => onToggleAccountStatus(String(acc.login), isDisconnected ? 'connect' : 'disconnect')}
+                              className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                                isDisconnected 
+                                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md' 
+                                  : 'bg-slate-800 hover:bg-rose-500/20 text-gray-300 hover:text-rose-300 border border-gray-700'
+                              }`}
+                            >
+                              {isDisconnected ? 'Reconnect Sync' : 'Disconnect'}
+                            </button>
+                          )}
+
+                          {onRemoveAccount && (
+                            <button
+                              onClick={() => setModalAccountToRemove({ login: String(acc.login) })}
+                              className="px-2 py-1 rounded text-xs text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600/30 border border-rose-500/20 transition-all font-semibold flex items-center gap-1"
+                              title="Remove account options (Soft or Hard remove)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Remove</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -620,6 +639,81 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
         </div>
 
       </div>
+
+      {/* Remove Account Confirmation Dialog inside MT5 Sync Modal */}
+      {modalAccountToRemove && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="bg-[#111827] border border-[#1F2937] rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <h3 className="text-sm font-bold text-white">Remove Account #{modalAccountToRemove.login}</h3>
+              </div>
+              <button 
+                onClick={() => setModalAccountToRemove(null)}
+                className="p-1 text-gray-400 hover:text-white rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-300">
+              Please choose removal method for <strong>Account #{modalAccountToRemove.login}</strong>:
+            </p>
+
+            {/* Option 1: Soft Remove */}
+            <div 
+              onClick={() => {
+                onRemoveAccount?.(modalAccountToRemove.login, 'soft');
+                setModalAccountToRemove(null);
+              }}
+              className="p-3.5 bg-[#0B0F19] hover:bg-cyan-950/20 border border-cyan-500/30 rounded-xl cursor-pointer transition-all space-y-1 hover:border-cyan-400"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+                  <Archive className="w-4 h-4 text-cyan-400" />
+                  <span>Soft Remove (Keep Data in Journal)</span>
+                </div>
+                <span className="text-[10px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded font-bold">Keeps Trades</span>
+              </div>
+              <p className="text-[11px] text-gray-400 leading-relaxed pl-6">
+                Removes account from active sync. <strong>All trade history, statistics, and notes remain permanently safe in your journal database.</strong>
+              </p>
+            </div>
+
+            {/* Option 2: Hard Remove */}
+            <div 
+              onClick={() => {
+                if (confirm(`⚠️ PERMANENT DELETE: Are you 100% sure you want to completely erase Account #${modalAccountToRemove.login} and delete ALL its trades from the database? This cannot be undone.`)) {
+                  onRemoveAccount?.(modalAccountToRemove.login, 'hard');
+                  setModalAccountToRemove(null);
+                }
+              }}
+              className="p-3.5 bg-[#0B0F19] hover:bg-rose-950/20 border border-rose-500/30 rounded-xl cursor-pointer transition-all space-y-1 hover:border-rose-400"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Hard Remove (Wipe All Trades)</span>
+                </div>
+                <span className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded font-bold">Deletes Data</span>
+              </div>
+              <p className="text-[11px] text-gray-400 leading-relaxed pl-6">
+                Completely deletes this account <strong>AND wipes all trades belonging to this account from the database and storage.</strong>
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setModalAccountToRemove(null)}
+                className="px-4 py-1.5 bg-[#1F2937] hover:bg-[#374151] text-gray-300 text-xs font-semibold rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

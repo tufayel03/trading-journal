@@ -582,6 +582,42 @@ export default function App() {
     setTimeout(() => setLiveSyncToast(null), 4500);
   };
 
+  const handleRemoveAccount = async (login: string, type: 'soft' | 'hard') => {
+    try {
+      const res = await fetch('/api/account/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login, type })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.accounts) {
+          setAccountsMap(data.accounts);
+        }
+      }
+    } catch {}
+
+    setAccountsMap(prev => {
+      const copy = { ...prev };
+      delete copy[login];
+      return copy;
+    });
+
+    if (selectedAccount === login) {
+      setSelectedAccount('ALL');
+      setFilters(prev => ({ ...prev, account: 'ALL' }));
+    }
+
+    if (type === 'hard') {
+      const filtered = trades.filter(t => String(t.accountLogin) !== String(login));
+      updateTradesState(filtered);
+      setLiveSyncToast(`Account #${login} permanently removed and all its trades wiped.`);
+    } else {
+      setLiveSyncToast(`Account #${login} removed from list. Trade history safely preserved in vault!`);
+    }
+    setTimeout(() => setLiveSyncToast(null), 4500);
+  };
+
   return (
     <div className="flex h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)] font-sans overflow-hidden transition-colors duration-300">
       
@@ -700,6 +736,7 @@ export default function App() {
             setFilters(prev => ({ ...prev, account: accId }));
           }}
           onToggleAccountStatus={handleToggleAccountStatus}
+          onRemoveAccount={handleRemoveAccount}
           currentZoom={currentZoom}
           onZoomChange={setCurrentZoom}
         />
@@ -823,6 +860,7 @@ export default function App() {
         accounts={accountsList}
         onClearAll={handleClearAllTrades}
         onToggleAccountStatus={handleToggleAccountStatus}
+        onRemoveAccount={handleRemoveAccount}
       />
 
       <SettingsModal

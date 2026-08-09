@@ -14,7 +14,11 @@ import {
   Globe,
   ChevronDown,
   Layers,
-  Palette
+  Palette,
+  Trash2,
+  Archive,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { UserSettings, AccountStatus } from '../types';
 import { ThemeSwitcher } from './ThemeSwitcher';
@@ -36,6 +40,7 @@ interface TopBarProps {
   selectedAccount?: string;
   onSelectAccount?: (login: string) => void;
   onToggleAccountStatus?: (login: string, action: 'connect' | 'disconnect') => void;
+  onRemoveAccount?: (login: string, type: 'soft' | 'hard') => void;
   currentZoom?: ZoomLevel;
   onZoomChange?: (zoom: ZoomLevel) => void;
 }
@@ -56,11 +61,13 @@ export const TopBar: React.FC<TopBarProps> = ({
   selectedAccount = 'ALL',
   onSelectAccount,
   onToggleAccountStatus,
+  onRemoveAccount,
   currentZoom = 115,
   onZoomChange
 }) => {
   const [isZoomOpen, setIsZoomOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [accountToRemove, setAccountToRemove] = useState<{ login: string; isCent?: boolean } | null>(null);
   const zoomOptions: ZoomLevel[] = [95, 100, 105, 110, 115, 120, 125];
 
   const currentSelectedAccountObj = accounts.find(a => String(a.login) === selectedAccount);
@@ -136,11 +143,11 @@ export const TopBar: React.FC<TopBarProps> = ({
             {isAccountMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsAccountMenuOpen(false)} />
-                <div className="absolute left-0 mt-1 w-80 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl z-50 p-2 space-y-1.5">
+                <div className="absolute left-0 mt-1 w-84 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl z-50 p-2 space-y-1.5">
                   <div className="px-2 py-1 text-[10px] uppercase font-bold text-[var(--text-muted)] flex items-center justify-between border-b border-[var(--border-color)] pb-1.5">
                     <span>Manage Accounts</span>
                     <span className="text-[9px] text-emerald-400 font-normal flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> History Saved Forever
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Vault Active
                     </span>
                   </div>
 
@@ -194,7 +201,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                                   ? 'bg-slate-500/20 text-slate-400 border border-slate-500/30' 
                                   : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               }`}>
-                                {isDisconnected ? 'Disconnected (Saved)' : 'Connected'}
+                                {isDisconnected ? 'Disconnected' : 'Live'}
                               </span>
                             </div>
                             <div className="text-[10px] text-[var(--text-muted)]">
@@ -222,6 +229,21 @@ export const TopBar: React.FC<TopBarProps> = ({
                               {isDisconnected ? 'Reconnect' : 'Disconnect'}
                             </button>
                           )}
+
+                          {onRemoveAccount && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsAccountMenuOpen(false);
+                                setAccountToRemove({ login: String(acc.login), isCent: isAccCent });
+                              }}
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                              title="Remove account options (Soft or Hard removal)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
                           {isSelected && <Check className={`w-3.5 h-3.5 ${isAccCent ? 'text-amber-400' : 'text-emerald-400'}`} />}
                         </div>
                       </div>
@@ -245,6 +267,81 @@ export const TopBar: React.FC<TopBarProps> = ({
             )}
           </div>
         </div>
+
+        {/* Remove Account Confirmation Modal */}
+        {accountToRemove && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-[#111827] border border-[#1F2937] rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-sm font-bold text-white">Remove Account #{accountToRemove.login}</h3>
+                </div>
+                <button 
+                  onClick={() => setAccountToRemove(null)}
+                  className="p-1 text-gray-400 hover:text-white rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-300">
+                Please select how you would like to remove <strong>Account #{accountToRemove.login}</strong>:
+              </p>
+
+              {/* Option 1: Soft Remove */}
+              <div 
+                onClick={() => {
+                  onRemoveAccount?.(accountToRemove.login, 'soft');
+                  setAccountToRemove(null);
+                }}
+                className="p-3.5 bg-[#0B0F19] hover:bg-cyan-950/20 border border-cyan-500/30 rounded-xl cursor-pointer transition-all space-y-1 hover:border-cyan-400"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+                    <Archive className="w-4 h-4 text-cyan-400" />
+                    <span>Soft Remove (Recommended)</span>
+                  </div>
+                  <span className="text-[10px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded font-bold">Keeps Trades</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed pl-6">
+                  Removes account from active sync list. <strong>All trade history, statistics, and notes remain permanently safe in your journal database.</strong>
+                </p>
+              </div>
+
+              {/* Option 2: Hard Remove */}
+              <div 
+                onClick={() => {
+                  if (confirm(`⚠️ PERMANENT DELETE: Are you 100% sure you want to completely erase Account #${accountToRemove.login} and delete ALL its trades from the database? This cannot be undone.`)) {
+                    onRemoveAccount?.(accountToRemove.login, 'hard');
+                    setAccountToRemove(null);
+                  }
+                }}
+                className="p-3.5 bg-[#0B0F19] hover:bg-rose-950/20 border border-rose-500/30 rounded-xl cursor-pointer transition-all space-y-1 hover:border-rose-400"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
+                    <Trash2 className="w-4 h-4 text-rose-400" />
+                    <span>Hard Remove (Wipe Everything)</span>
+                  </div>
+                  <span className="text-[10px] bg-rose-500/10 text-rose-400 px-2 py-0.5 rounded font-bold">Deletes Data</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed pl-6">
+                  Completely deletes this account <strong>AND erases all trades belonging to this account from the database and storage.</strong>
+                </p>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => setAccountToRemove(null)}
+                  className="px-4 py-1.5 bg-[#1F2937] hover:bg-[#374151] text-gray-300 text-xs font-semibold rounded-lg"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Center / Right: Clean Live Equity + Unified Utility Strip + Actions */}
         <div className="flex items-center gap-3">

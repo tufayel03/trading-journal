@@ -204,6 +204,22 @@ function mt5SyncPlugin(): Plugin {
 
         if (accountData) {
           const loginKey = String(accountData.login);
+
+          // Check if this account was removed by the user
+          inMemoryStatus.removedAccounts = inMemoryStatus.removedAccounts || [];
+          if (inMemoryStatus.removedAccounts.includes(loginKey)) {
+            return {
+              trades: inMemoryTrades,
+              newCount: 0,
+              accounts: inMemoryStatus.accounts,
+              account: inMemoryStatus.account,
+              openPositions: inMemoryStatus.openPositions
+            };
+          }
+
+          const existingAcc = inMemoryStatus.accounts?.[loginKey];
+          const isPreviouslyDisconnected = existingAcc?.status === 'disconnected';
+
           const isCentAccount = String(accountData.currency || '').toUpperCase() === 'USC' || 
                                 String(accountData.currency || '').toUpperCase().includes('CENT') ||
                                 String(accountData.server || '').toLowerCase().includes('cent');
@@ -229,25 +245,35 @@ function mt5SyncPlugin(): Plugin {
             usdBalance,
             usdEquity,
             lastUpdate: new Date().toISOString(),
-            openPositionsCount: openPositionsData.length
+            openPositionsCount: isPreviouslyDisconnected ? 0 : openPositionsData.length,
+            status: isPreviouslyDisconnected ? 'disconnected' : (existingAcc?.status || 'connected'),
+            disconnectedAt: isPreviouslyDisconnected ? (existingAcc?.disconnectedAt || new Date().toISOString()) : undefined
           };
-          inMemoryStatus.account = inMemoryStatus.accounts[loginKey];
 
-          // Merge open positions by account
-          const otherPositions = (inMemoryStatus.openPositions || []).filter((p: any) => p.accountLogin && String(p.accountLogin) !== loginKey);
-          const currentPositions = openPositionsData.map((p: any) => {
-            const rawProfit = parseFloat(p.profit || 0);
-            return {
-              ...p,
-              accountLogin: loginKey,
-              accountServer: accountData.server,
-              accountCurrency: isCentAccount ? 'USC' : (accountData.currency || 'USD'),
-              isCent: isCentAccount,
-              nativeProfit: rawProfit,
-              profit: Number((rawProfit * rate).toFixed(4))
-            };
-          });
-          inMemoryStatus.openPositions = [...otherPositions, ...currentPositions];
+          if (inMemoryStatus.account?.login === loginKey) {
+            inMemoryStatus.account = inMemoryStatus.accounts[loginKey];
+          }
+
+          // If disconnected, do not populate live open positions
+          if (!isPreviouslyDisconnected) {
+            const otherPositions = (inMemoryStatus.openPositions || []).filter((p: any) => p.accountLogin && String(p.accountLogin) !== loginKey);
+            const currentPositions = openPositionsData.map((p: any) => {
+              const rawProfit = parseFloat(p.profit || 0);
+              return {
+                ...p,
+                accountLogin: loginKey,
+                accountServer: accountData.server,
+                accountCurrency: isCentAccount ? 'USC' : (accountData.currency || 'USD'),
+                isCent: isCentAccount,
+                nativeProfit: rawProfit,
+                profit: Number((rawProfit * rate).toFixed(4))
+              };
+            });
+            inMemoryStatus.openPositions = [...otherPositions, ...currentPositions];
+          } else {
+            inMemoryStatus.openPositions = (inMemoryStatus.openPositions || []).filter((p: any) => String(p.accountLogin) !== loginKey);
+          }
+
           inMemoryStatus.totalSyncedDeals = inMemoryTrades.length;
           inMemoryStatus.lastSync = new Date().toISOString();
 
@@ -442,6 +468,10 @@ function mt5SyncPlugin(): Plugin {
               } else {
                 acc.status = 'connected';
                 delete acc.disconnectedAt;
+                // Unblock from removed list if previously removed
+                if (inMemoryStatus.removedAccounts) {
+                  inMemoryStatus.removedAccounts = inMemoryStatus.removedAccounts.filter((k: string) => k !== loginKey);
+                }
               }
               try {
                 fs.writeFileSync(statusFile, JSON.stringify(inMemoryStatus, null, 2), 'utf-8');
@@ -464,11 +494,76 @@ function mt5SyncPlugin(): Plugin {
         });
       };
 
+      const handleAccountRemoveReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        let body = '';
+        req.on('data', (chunk: string) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const { login, type } = JSON.parse(body || '{}');
+            const loginKey = String(login);
+
+            inMemoryStatus.removedAccounts = inMemoryStatus.removedAccounts || [];
+            if (!inMemoryStatus.removedAccounts.includes(loginKey)) {
+              inMemoryStatus.removedAccounts.push(loginKey);
+            }
+
+            if (inMemoryStatus.accounts && inMemoryStatus.accounts[loginKey]) {
+              delete inMemoryStatus.accounts[loginKey];
+            }
+
+            if (inMemoryStatus.account?.login === loginKey) {
+              const remainingLogins = Object.keys(inMemoryStatus.accounts || {});
+              inMemoryStatus.account = remainingLogins.length > 0 ? inMemoryStatus.accounts[remainingLogins[0]] : null;
+            }
+
+            inMemoryStatus.openPositions = (inMemoryStatus.openPositions || []).filter(
+              (p: any) => String(p.accountLogin) !== loginKey
+            );
+
+            if (type === 'hard') {
+              // Hard remove: Delete all trades from this account from database
+              inMemoryTrades = inMemoryTrades.filter((t: any) => String(t.accountLogin) !== loginKey);
+              try {
+                fs.writeFileSync(syncFile, JSON.stringify(inMemoryTrades, null, 2), 'utf-8');
+              } catch {}
+            }
+
+            inMemoryStatus.totalSyncedDeals = inMemoryTrades.length;
+            try {
+              fs.writeFileSync(statusFile, JSON.stringify(inMemoryStatus, null, 2), 'utf-8');
+            } catch {}
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ 
+              success: true, 
+              message: `Account #${loginKey} ${type === 'hard' ? 'permanently removed and all trades wiped' : 'soft removed (trade history safely preserved in journal)'}`,
+              type,
+              accounts: inMemoryStatus.accounts,
+              trades: inMemoryTrades
+            }));
+          } catch (err: any) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, error: err.message }));
+          }
+        });
+      };
+
       server.middlewares.use('/api/webhook/trade', handleWebhookReq);
       server.middlewares.use('/api/webhook/batch', handleWebhookReq);
       server.middlewares.use('/api/webhook/status', handleStatusReq);
       server.middlewares.use('/api/sync/clear', handleClearReq);
       server.middlewares.use('/api/account/toggle', handleAccountToggleReq);
+      server.middlewares.use('/api/account/remove', handleAccountRemoveReq);
     }
   };
 }
