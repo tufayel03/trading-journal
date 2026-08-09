@@ -13,7 +13,12 @@ export function loadTrades(): Trade[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      const valid = parsed.filter((t: any) => t && typeof t === 'object' && t.id);
+      const valid = parsed.filter((t: any) => 
+        t && typeof t === 'object' && t.id &&
+        !t.id.startsWith('trd-') &&
+        t.accountLogin !== '160096169' &&
+        !t.notes?.includes('Live Auto-Sync Verification Test Trade')
+      );
       return valid;
     }
     return [];

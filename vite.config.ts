@@ -422,6 +422,7 @@ function mt5SyncPlugin(): Plugin {
 }
 
 export default defineConfig(() => {
+  // Force restart to reload clean trades from disk
   return {
     plugins: [react(), tailwindcss(), mt5SyncPlugin()],
     resolve: {
