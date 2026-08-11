@@ -17,6 +17,7 @@
   - **BUY Trades:** Blue entry notch (`—`) + Blue upward triangle arrow (`▲`) at `openPrice`; Red exit notch (`—`) + Red downward triangle arrow (`▼`) at `closePrice`.
   - **SELL Trades:** Red entry notch (`—`) + Red downward triangle arrow (`▼`) at `openPrice`; Blue exit notch (`—`) + Blue upward triangle arrow (`▲`) at `closePrice`.
   - **Connecting Dashed Trendline:** Blue (BUY) or Red (SELL) dashed line connecting entry to exit across the chart. During replay playback, dynamically stretches from the Entry notch to the live active replay bar.
+  - **Timeframe Continuity:** Seamlessly preserves the exact replay timestamp, candle position, and trade progression when switching between timeframes (e.g. 5m ➔ 1m, 15m, 1h).
   - **Same-Bar Separation:** Automatic horizontal offset for scalps where entry and exit occurred within the same candle bar.
   - **Interactive Hover Tooltip:** Floating MT5-style popup with ticket number, lots, open/close prices, and net P&L with pips.
   - **MT5 Classic Candlestick Theme:** Added `MT5` button in header supporting pure White/Hollow bull candles and solid Black bear candles matching desktop MT5.
