@@ -73,6 +73,7 @@ export const TradeReplayModal: React.FC<Props> = ({
   const chartRef = useRef<TradingViewReplayChartRef>(null);
   const playTimerRef = useRef<NodeJS.Timeout | null>(null);
   const activeReplayTimestampRef = useRef<number | null>(null);
+  const activeReplayPriceRef = useRef<number | null>(null);
   const prevTradeIdRef = useRef<string | number | null>(null);
 
   // Full 9 timeframe options: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M
@@ -96,14 +97,15 @@ export const TradeReplayModal: React.FC<Props> = ({
   const prevTrade = currentTradeIndex > 0 ? allTrades[currentTradeIndex - 1] : null;
   const nextTrade = currentTradeIndex >= 0 && currentTradeIndex < allTrades.length - 1 ? allTrades[currentTradeIndex + 1] : null;
 
-  // Keep active replay timestamp synced with current bar
+  // Keep active replay timestamp and price synced with current bar
   useEffect(() => {
     if (candles[currentIndex]) {
       activeReplayTimestampRef.current = candles[currentIndex].time;
+      activeReplayPriceRef.current = candles[currentIndex].close;
     }
   }, [currentIndex, candles]);
 
-  // Load candles function with seamless timestamp preservation across timeframes
+  // Load candles function with seamless timestamp & exact price preservation across timeframes
   const loadCandles = (force: boolean = false) => {
     if (force) setIsSyncingMT5(true);
     else setIsLoading(true);
@@ -116,6 +118,7 @@ export const TradeReplayModal: React.FC<Props> = ({
     const isSameTrade = prevTradeIdRef.current === currentTradeId;
     if (!isSameTrade) {
       activeReplayTimestampRef.current = null;
+      activeReplayPriceRef.current = null;
     }
     prevTradeIdRef.current = currentTradeId;
 
@@ -139,8 +142,6 @@ export const TradeReplayModal: React.FC<Props> = ({
             return;
           }
 
-          setCandles(sorted);
-
           // Find exact candle corresponding to targetTimestamp in the new timeframe
           let targetIndex = sorted.findIndex(c => c.time >= targetTimestamp);
           if (targetIndex === -1) {
@@ -152,8 +153,17 @@ export const TradeReplayModal: React.FC<Props> = ({
           // If brand new trade modal opening, provide a slight pre-trade context lead-in
           if (!isSameTrade) {
             targetIndex = Math.max(0, targetIndex - 15);
+          } else if (activeReplayPriceRef.current && sorted[targetIndex]) {
+            // Dynamic intra-bar developing candle: sync forming candle's price to exact replay price
+            const activePrice = activeReplayPriceRef.current;
+            const currentBar = { ...sorted[targetIndex] };
+            currentBar.close = activePrice;
+            currentBar.high = Math.max(currentBar.high, activePrice);
+            currentBar.low = Math.min(currentBar.low, activePrice);
+            sorted[targetIndex] = currentBar;
           }
 
+          setCandles(sorted);
           setCurrentIndex(Math.max(0, Math.min(sorted.length - 1, targetIndex)));
         } else {
           setCandles([]);
@@ -400,6 +410,7 @@ export const TradeReplayModal: React.FC<Props> = ({
                   if (timeframe === tf.value) return;
                   if (candles[currentIndex]) {
                     activeReplayTimestampRef.current = candles[currentIndex].time;
+                    activeReplayPriceRef.current = candles[currentIndex].close;
                   }
                   setTimeframe(tf.value);
                 }}
