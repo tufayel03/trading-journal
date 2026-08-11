@@ -107,8 +107,11 @@ export const TradeReplayModal: React.FC<Props> = ({
 
   // Load candles function with seamless timestamp & exact price preservation across timeframes
   const loadCandles = (force: boolean = false) => {
-    if (force) setIsSyncingMT5(true);
-    else setIsLoading(true);
+    if (force) {
+      setIsSyncingMT5(true);
+    } else if (candles.length === 0) {
+      setIsLoading(true);
+    }
     setIsPlaying(false);
 
     const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);

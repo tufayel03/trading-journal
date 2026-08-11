@@ -808,15 +808,8 @@ function mt5SyncPlugin(): Plugin {
               '1w': 604800,
               '1mn': 2592000
             };
-            const barSec = tfSecondsMap[timeframe] || 300;
-
-            // Fetch if:
-            // 1. We have no candles
-            // 2. User forced fetch
-            // 3. User requested backward scrolling (to <= oldestSavedTime)
-            // 4. Latest saved candle is older than current time by more than 1.5 bars
-            const isMissingNewCandles = newestSavedTime > 0 && (nowSec - newestSavedTime > barSec * 1.5);
-            const needsFetch = (to > 0 && to <= oldestSavedTime) || savedCandles.length < 50 || forceFetch || isMissingNewCandles;
+            // Serve instantly from saved disk database if available
+            const needsFetch = forceFetch || (to > 0 && to <= oldestSavedTime) || savedCandles.length === 0;
 
             if (needsFetch) {
               fetchMT5CandlesLive(symbol, timeframe, from, to, 50000);
