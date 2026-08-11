@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
 import { defineConfig, Plugin } from 'vite';
 
 function mt5SyncPlugin(): Plugin {
@@ -255,6 +255,10 @@ function mt5SyncPlugin(): Plugin {
             freeMargin: nativeFreeMargin,
             usdBalance,
             usdEquity,
+            initialDeposit: accountData.initialDeposit !== undefined ? parseFloat(accountData.initialDeposit) : existingAcc?.initialDeposit,
+            nativeInitialDeposit: accountData.nativeInitialDeposit !== undefined ? parseFloat(accountData.nativeInitialDeposit) : existingAcc?.nativeInitialDeposit,
+            totalDeposits: accountData.totalDeposits !== undefined ? parseFloat(accountData.totalDeposits) : existingAcc?.totalDeposits,
+            totalWithdrawals: accountData.totalWithdrawals !== undefined ? parseFloat(accountData.totalWithdrawals) : existingAcc?.totalWithdrawals,
             lastUpdate: new Date().toISOString(),
             openPositionsCount: isPreviouslyDisconnected ? 0 : openPositionsData.length,
             status: isPreviouslyDisconnected ? 'disconnected' : (existingAcc?.status || 'connected'),
@@ -324,7 +328,7 @@ function mt5SyncPlugin(): Plugin {
               } catch {}
             }
 
-            // Ingest any direct candle export files from MT5 EA
+            // Ingest and PERMANENTLY MERGE any direct candle export files from MT5 EA
             if (fs.existsSync(filesDir)) {
               try {
                 const candleFiles = fs.readdirSync(filesDir).filter(f => f.startsWith('candles_') && f.endsWith('.json'));
@@ -334,7 +338,26 @@ function mt5SyncPlugin(): Plugin {
                   const dest = path.join(candlesDir, destName);
                   const candleContent = fs.readFileSync(src, 'utf-8');
                   if (candleContent && candleContent.length > 50) {
-                    fs.writeFileSync(dest, candleContent, 'utf-8');
+                    try {
+                      const incomingCandles = JSON.parse(candleContent);
+                      if (Array.isArray(incomingCandles) && incomingCandles.length > 0) {
+                        let existingCandles: any[] = [];
+                        if (fs.existsSync(dest)) {
+                          try {
+                            existingCandles = JSON.parse(fs.readFileSync(dest, 'utf-8'));
+                          } catch {}
+                        }
+                        const candleMap = new Map<number, any>();
+                        existingCandles.forEach(c => {
+                          if (c && typeof c.time === 'number') candleMap.set(c.time, c);
+                        });
+                        incomingCandles.forEach(c => {
+                          if (c && typeof c.time === 'number') candleMap.set(c.time, c);
+                        });
+                        const merged = Array.from(candleMap.values()).sort((a, b) => a.time - b.time);
+                        fs.writeFileSync(dest, JSON.stringify(merged), 'utf-8');
+                      }
+                    } catch {}
                   }
                 }
               } catch {}
@@ -415,6 +438,9 @@ function mt5SyncPlugin(): Plugin {
           });
         } else if (req.method === 'GET') {
           scanMT5DirectFiles();
+          if (fs.existsSync(syncFile)) {
+            try { inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8')); } catch {}
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(inMemoryTrades));
         } else if (req.method === 'DELETE') {
@@ -441,6 +467,11 @@ function mt5SyncPlugin(): Plugin {
         }
 
         scanMT5DirectFiles();
+        if (fs.existsSync(statusFile)) {
+          try {
+            inMemoryStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+          } catch {}
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(inMemoryStatus));
       };
@@ -762,11 +793,32 @@ function mt5SyncPlugin(): Plugin {
               } catch {}
             }
 
-            // If we have no candles or user specifically requested force fetch (or backward scroll beyond our oldest bar)
             const oldestSavedTime = savedCandles.length > 0 ? savedCandles[0].time : 0;
-            const needsBackwardFetch = (to > 0 && to <= oldestSavedTime) || savedCandles.length < 50 || forceFetch;
+            const newestSavedTime = savedCandles.length > 0 ? savedCandles[savedCandles.length - 1].time : 0;
+            const nowSec = Math.floor(Date.now() / 1000);
 
-            if (needsBackwardFetch) {
+            const tfSecondsMap: Record<string, number> = {
+              '1m': 60,
+              '5m': 300,
+              '15m': 900,
+              '30m': 1800,
+              '1h': 3600,
+              '4h': 14400,
+              '1d': 86400,
+              '1w': 604800,
+              '1mn': 2592000
+            };
+            const barSec = tfSecondsMap[timeframe] || 300;
+
+            // Fetch if:
+            // 1. We have no candles
+            // 2. User forced fetch
+            // 3. User requested backward scrolling (to <= oldestSavedTime)
+            // 4. Latest saved candle is older than current time by more than 1.5 bars
+            const isMissingNewCandles = newestSavedTime > 0 && (nowSec - newestSavedTime > barSec * 1.5);
+            const needsFetch = (to > 0 && to <= oldestSavedTime) || savedCandles.length < 50 || forceFetch || isMissingNewCandles;
+
+            if (needsFetch) {
               fetchMT5CandlesLive(symbol, timeframe, from, to, 50000);
               if (fs.existsSync(file)) {
                 try {
@@ -829,6 +881,164 @@ function mt5SyncPlugin(): Plugin {
         }
       };
 
+      const startupLnkPath = path.join(
+        process.env.APPDATA || '',
+        'Microsoft',
+        'Windows',
+        'Start Menu',
+        'Programs',
+        'Startup',
+        'HyperTrade_AutoSync.lnk'
+      );
+
+      const handleAutoSyncStatusReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        const pidFile = path.resolve(dataDir, 'auto_sync_daemon.pid');
+        const logFile = path.resolve(dataDir, 'auto_sync_daemon.log');
+        let isDaemonRunning = false;
+        let daemonPid = null;
+
+        if (fs.existsSync(pidFile)) {
+          try {
+            daemonPid = fs.readFileSync(pidFile, 'utf-8').trim();
+            if (daemonPid) {
+              try {
+                process.kill(parseInt(daemonPid, 10), 0);
+                isDaemonRunning = true;
+              } catch {
+                isDaemonRunning = false;
+              }
+            }
+          } catch {}
+        }
+
+        const isStartupEnabled = fs.existsSync(startupLnkPath);
+        let recentLogs: string[] = [];
+        if (fs.existsSync(logFile)) {
+          try {
+            const lines = fs.readFileSync(logFile, 'utf-8').split('\n').filter(Boolean);
+            recentLogs = lines.slice(-8);
+          } catch {}
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          isDaemonRunning,
+          daemonPid,
+          isStartupEnabled,
+          lastSync: inMemoryStatus.lastSync || new Date().toISOString(),
+          totalAccounts: Object.keys(inMemoryStatus.accounts || {}).length,
+          accounts: inMemoryStatus.accounts,
+          recentLogs
+        }));
+      };
+
+      let isSyncInProgress = false;
+
+      const handleAutoSyncRunReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        if (isSyncInProgress) {
+          try {
+            inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8'));
+            inMemoryStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+          } catch {}
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            message: 'Sync in progress, returning latest saved data',
+            trades: inMemoryTrades,
+            accounts: inMemoryStatus.accounts,
+            account: inMemoryStatus.account,
+            openPositions: inMemoryStatus.openPositions
+          }));
+          return;
+        }
+
+        isSyncInProgress = true;
+        const syncScript = path.resolve(__dirname, 'scripts', 'sync_mt5_account.py');
+        exec(`python "${syncScript}" --no-webhook`, { cwd: __dirname, timeout: 35000 }, (error, stdout, stderr) => {
+          isSyncInProgress = false;
+          try {
+            inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8'));
+            inMemoryStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+          } catch {}
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            message: `All ${Object.keys(inMemoryStatus.accounts || {}).length} accounts synced seamlessly!`,
+            trades: inMemoryTrades,
+            accounts: inMemoryStatus.accounts,
+            account: inMemoryStatus.account,
+            openPositions: inMemoryStatus.openPositions
+          }));
+        });
+      };
+
+      const handleAutoSyncSetupStartupReq = (req: any, res: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        try {
+          const installScript = path.resolve(__dirname, 'scripts', 'install_startup.py');
+          execSync(`python "${installScript}"`, { cwd: __dirname, timeout: 15000, encoding: 'utf-8' });
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            success: true,
+            isStartupEnabled: true,
+            message: 'PC Startup Auto-Sync enabled! All accounts will sync automatically whenever Windows boots.'
+          }));
+        } catch (err: any) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, error: err.message }));
+        }
+      };
+
+      // Fast, non-blocking periodic multi-account background sync every 3.5s
+      const bgSyncInterval = setInterval(() => {
+        if (isSyncInProgress) return;
+        isSyncInProgress = true;
+        const syncScript = path.resolve(__dirname, 'scripts', 'sync_mt5_account.py');
+        exec(`python "${syncScript}" --no-webhook`, { cwd: __dirname }, (error, stdout, stderr) => {
+          isSyncInProgress = false;
+          if (!error) {
+            try {
+              if (fs.existsSync(syncFile)) inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8'));
+              if (fs.existsSync(statusFile)) inMemoryStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+            } catch {}
+          }
+        });
+      }, 3500);
+      server.httpServer?.on('close', () => clearInterval(bgSyncInterval));
+
       server.middlewares.use('/api/webhook/trade', handleWebhookReq);
       server.middlewares.use('/api/webhook/batch', handleWebhookReq);
       server.middlewares.use('/api/webhook/status', handleStatusReq);
@@ -839,6 +1049,9 @@ function mt5SyncPlugin(): Plugin {
       server.middlewares.use('/api/account/restore', handleAccountAddReq);
       server.middlewares.use('/api/candles/sync-mt5', handleCandlesSyncReq);
       server.middlewares.use('/api/candles', handleCandlesReq);
+      server.middlewares.use('/api/autosync/status', handleAutoSyncStatusReq);
+      server.middlewares.use('/api/autosync/run', handleAutoSyncRunReq);
+      server.middlewares.use('/api/autosync/setup-startup', handleAutoSyncSetupStartupReq);
     }
   };
 }

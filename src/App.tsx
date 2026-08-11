@@ -497,13 +497,29 @@ export default function App() {
     const activeAccount = filters.account || selectedAccount;
     if (activeAccount === 'ALL') {
       if (accountsList.length > 0) {
-        const totalBalanceUSD = accountsList.reduce((sum, a) => {
+        const activeAccs = accountsList.filter(a => a.status !== 'archived');
+        const hasDetectedDeposits = activeAccs.some(a => a.initialDeposit && a.initialDeposit > 0);
+        if (hasDetectedDeposits) {
+          const totalDepositUSD = activeAccs.reduce((sum, a) => {
+            if (a.initialDeposit && a.initialDeposit > 0) return sum + a.initialDeposit;
+            const balUSD = a.usdBalance !== undefined 
+              ? a.usdBalance 
+              : ((a.isCent || a.currency === 'USC') ? (a.balance / 100) : a.balance);
+            return sum + (balUSD || 0);
+          }, 0);
+          return Number(totalDepositUSD.toFixed(2));
+        }
+
+        const totalBalanceUSD = activeAccs.reduce((sum, a) => {
           const balUSD = a.usdBalance !== undefined 
             ? a.usdBalance 
             : ((a.isCent || a.currency === 'USC') ? (a.balance / 100) : a.balance);
           return sum + (balUSD || 0);
         }, 0);
         return Math.max(0, Number((totalBalanceUSD - overallNetProfit).toFixed(2)));
+      }
+      if (accountStatus?.initialDeposit && accountStatus.initialDeposit > 0) {
+        return accountStatus.initialDeposit;
       }
       if (accountStatus?.balance) {
         const balUSD = (accountStatus.isCent || accountStatus.currency === 'USC') ? (accountStatus.balance / 100) : accountStatus.balance;
@@ -512,9 +528,12 @@ export default function App() {
       return settings?.initialBalance || 200;
     } else {
       const targetAcc = accountsList.find(a => String(a.login) === String(activeAccount)) || accountStatus;
+      if (targetAcc?.initialDeposit && targetAcc.initialDeposit > 0) {
+        return targetAcc.initialDeposit;
+      }
       if (targetAcc?.balance) {
         const isCent = targetAcc.isCent || targetAcc.currency === 'USC';
-        const balUSD = isCent ? (targetAcc.balance / 100) : targetAcc.balance;
+        const balUSD = targetAcc.usdBalance !== undefined ? targetAcc.usdBalance : (isCent ? (targetAcc.balance / 100) : targetAcc.balance);
         return Math.max(0, Number((balUSD - overallNetProfit).toFixed(2)));
       }
       return settings?.initialBalance || 200;

@@ -30,7 +30,9 @@ export interface TradingViewReplayChartRef {
   scrollToTime: (timestamp: number) => void;
 }
 
-export type ChartTheme = 'light' | 'dark' | 'white-hollow';
+export type ChartTheme = 'light' | 'dark' | 'white-hollow' | 'mt5';
+
+import { MT5TradeOverlay } from './MT5TradeOverlay';
 
 interface Props {
   candles: Candle[];
@@ -119,7 +121,7 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
   }));
 
   // Theme configuration palette
-  const isLight = theme === 'light' || theme === 'white-hollow';
+  const isLight = theme === 'light' || theme === 'white-hollow' || theme === 'mt5';
 
   const themeColors = {
     background: isLight ? '#FFFFFF' : '#0B0F19',
@@ -128,13 +130,13 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
     borderColor: isLight ? '#E0E3EB' : '#1F2937',
     crosshairLine: isLight ? '#9598A1' : '#6366F1',
     crosshairLabel: isLight ? '#131722' : '#4F46E5',
-    // Exact TradingView Custom Colors matching screenshot: Green Bullish & Charcoal Bearish
-    upColor: '#78C279',
-    upWick: '#78C279',
-    upBorder: '#78C279',
-    downColor: theme === 'white-hollow' ? '#FFFFFF' : '#4E525D',
-    downWick: '#4E525D',
-    downBorder: '#4E525D',
+    // MT5 Classic (White bull / Black bear) vs TradingView Custom Colors
+    upColor: theme === 'mt5' ? '#FFFFFF' : '#78C279',
+    upWick: theme === 'mt5' ? '#000000' : '#78C279',
+    upBorder: theme === 'mt5' ? '#000000' : '#78C279',
+    downColor: theme === 'mt5' ? '#000000' : theme === 'white-hollow' ? '#FFFFFF' : '#4E525D',
+    downWick: theme === 'mt5' ? '#000000' : '#4E525D',
+    downBorder: theme === 'mt5' ? '#000000' : '#4E525D',
     entryLine: isLight ? '#0284C7' : '#06B6D4',
     exitLineWin: isLight ? '#16A34A' : '#10B981',
     exitLineLoss: isLight ? '#DC2626' : '#EF4444',
@@ -345,62 +347,7 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
     }));
     candlestickSeriesRef.current.setData(formattedCandles);
 
-    // 2. Update Clean Markers (Only crisp arrows on candle)
-    const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);
-    const exitSec = Math.floor(new Date(trade.closeTime).getTime() / 1000);
-    
-    const markers: any[] = [];
-    const isBuy = trade.direction === 'BUY';
-    const isWin = trade.netProfit > 0;
-
-    // Check if Entry candle is visible in current slice
-    const hasEntryReached = currentSlice.some(c => c.time >= entrySec);
-    if (hasEntryReached) {
-      let closestEntryCandle = currentSlice[0];
-      let minDiff = Math.abs(currentSlice[0].time - entrySec);
-      for (const c of currentSlice) {
-        const diff = Math.abs(c.time - entrySec);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closestEntryCandle = c;
-        }
-      }
-
-      markers.push({
-        time: closestEntryCandle.time as UTCTimestamp,
-        position: isBuy ? 'belowBar' : 'aboveBar',
-        color: isBuy ? '#16A34A' : '#DC2626',
-        shape: isBuy ? 'arrowUp' : 'arrowDown'
-      });
-    }
-
-    // Check if Exit candle is reached in current slice
-    const hasExitReached = currentSlice.some(c => c.time >= exitSec);
-    if (hasExitReached) {
-      let closestExitCandle = currentSlice[0];
-      let minDiff = Math.abs(currentSlice[0].time - exitSec);
-      for (const c of currentSlice) {
-        const diff = Math.abs(c.time - exitSec);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closestExitCandle = c;
-        }
-      }
-
-      markers.push({
-        time: closestExitCandle.time as UTCTimestamp,
-        position: isBuy ? 'aboveBar' : 'belowBar',
-        color: isWin ? '#16A34A' : trade.netProfit < 0 ? '#DC2626' : '#787B86',
-        shape: isBuy ? 'arrowDown' : 'arrowUp'
-      });
-    }
-
-    // Set markers on candle series
-    try {
-      createSeriesMarkers(candlestickSeriesRef.current, markers);
-    } catch {}
-
-    // 3. Update Price Lines (Entry, SL, TP)
+    // Update SL and TP Price Lines (if set on the trade)
     priceLinesRef.current.forEach(pl => {
       try {
         candlestickSeriesRef.current?.removePriceLine(pl);
@@ -408,18 +355,10 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
     });
     priceLinesRef.current = [];
 
-    if (hasEntryReached && candlestickSeriesRef.current) {
-      // Entry Price Line
-      const entryLine = candlestickSeriesRef.current.createPriceLine({
-        price: trade.openPrice,
-        color: themeColors.entryLine,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `ENTRY (${trade.openPrice.toFixed(precision)})`
-      });
-      priceLinesRef.current.push(entryLine);
+    const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);
+    const hasEntryReached = currentSlice.some(c => c.time >= entrySec);
 
+    if (hasEntryReached && candlestickSeriesRef.current) {
       // Stop Loss Price Line (if set)
       if (trade.stopLoss && trade.stopLoss > 0) {
         const slLine = candlestickSeriesRef.current.createPriceLine({
@@ -447,25 +386,6 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
       }
     }
 
-    // Exit Price Line when exit is reached
-    if (hasExitReached && trade.closePrice && candlestickSeriesRef.current) {
-      const exitLineColor = isWin
-        ? themeColors.exitLineWin
-        : trade.netProfit < 0
-        ? themeColors.exitLineLoss
-        : themeColors.exitLineEven;
-
-      const exitLine = candlestickSeriesRef.current.createPriceLine({
-        price: trade.closePrice,
-        color: exitLineColor,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `EXIT (${trade.closePrice.toFixed(precision)})`
-      });
-      priceLinesRef.current.push(exitLine);
-    }
-
   }, [candles, visibleCount, trade, precision, theme, themeColors.entryLine, themeColors.exitLineWin, themeColors.exitLineLoss, themeColors.exitLineEven, themeColors.slLine, themeColors.tpLine]);
 
   return (
@@ -491,6 +411,17 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
       {/* Chart Canvas Area + Interactive Drawing Layer */}
       <div className="flex-1 min-w-0 min-h-0 h-full relative">
         <div ref={containerRef} className="w-full h-full min-w-0 min-h-0" />
+
+        {/* Authentic MT5 Trade Execution History Overlay */}
+        <MT5TradeOverlay
+          chart={chartRef.current}
+          series={candlestickSeriesRef.current}
+          trade={trade}
+          candles={candles}
+          currentSlice={currentSlice}
+          precision={precision}
+          isLight={isLight}
+        />
 
         <TradingViewDrawingLayer
           chart={chartRef.current}

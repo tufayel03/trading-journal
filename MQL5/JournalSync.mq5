@@ -149,15 +149,15 @@ void ExportSymbolCandles(string sym, ENUM_TIMEFRAMES tf, string tfName, int maxB
 void ExportAllActiveCandles()
 {
    string chartSym = Symbol();
-   ExportSymbolCandles(chartSym, PERIOD_M1, "1m", 1500);
-   ExportSymbolCandles(chartSym, PERIOD_M5, "5m", 1500);
-   ExportSymbolCandles(chartSym, PERIOD_M15, "15m", 1000);
-   ExportSymbolCandles(chartSym, PERIOD_M30, "30m", 800);
-   ExportSymbolCandles(chartSym, PERIOD_H1, "1h", 500);
-   ExportSymbolCandles(chartSym, PERIOD_H4, "4h", 300);
-   ExportSymbolCandles(chartSym, PERIOD_D1, "1d", 200);
-   ExportSymbolCandles(chartSym, PERIOD_W1, "1w", 150);
-   ExportSymbolCandles(chartSym, PERIOD_MN1, "1mn", 100);
+   ExportSymbolCandles(chartSym, PERIOD_M1, "1m", 10000);
+   ExportSymbolCandles(chartSym, PERIOD_M5, "5m", 10000);
+   ExportSymbolCandles(chartSym, PERIOD_M15, "15m", 5000);
+   ExportSymbolCandles(chartSym, PERIOD_M30, "30m", 3000);
+   ExportSymbolCandles(chartSym, PERIOD_H1, "1h", 2000);
+   ExportSymbolCandles(chartSym, PERIOD_H4, "4h", 1000);
+   ExportSymbolCandles(chartSym, PERIOD_D1, "1d", 1000);
+   ExportSymbolCandles(chartSym, PERIOD_W1, "1w", 500);
+   ExportSymbolCandles(chartSym, PERIOD_MN1, "1mn", 200);
 }
 
 //+------------------------------------------------------------------+
@@ -219,9 +219,30 @@ string BuildAccountInfoJSON()
    double freeMargin= AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    string currency  = AccountInfoString(ACCOUNT_CURRENCY);
    
+   // Auto detect earliest initial deposit deal from history
+   double initialDeposit = 0.0;
+   if(HistorySelect(0, TimeCurrent()))
+   {
+      int totalDeals = HistoryDealsTotal();
+      for(int k = 0; k < totalDeals; k++)
+      {
+         ulong t = HistoryDealGetTicket(k);
+         if(t > 0 && HistoryDealGetInteger(t, DEAL_TYPE) == DEAL_TYPE_BALANCE)
+         {
+            double p = HistoryDealGetDouble(t, DEAL_PROFIT);
+            if(p > 0)
+            {
+               initialDeposit = p;
+               break;
+            }
+         }
+      }
+   }
+   if(initialDeposit <= 0) initialDeposit = balance;
+   
    return StringFormat(
-      "{\"login\":\"%I64d\",\"server\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,\"margin\":%.2f,\"freeMargin\":%.2f,\"currency\":\"%s\",\"lastUpdate\":\"%s\"}",
-      login, server, balance, equity, margin, freeMargin, currency, FormatISOTime(TimeCurrent())
+      "{\"login\":\"%I64d\",\"server\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,\"margin\":%.2f,\"freeMargin\":%.2f,\"currency\":\"%s\",\"initialDeposit\":%.2f,\"lastUpdate\":\"%s\"}",
+      login, server, balance, equity, margin, freeMargin, currency, initialDeposit, FormatISOTime(TimeCurrent())
    );
 }
 

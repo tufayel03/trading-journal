@@ -178,6 +178,10 @@ export interface AccountStatus {
   equity: number; // native equity (e.g. 504.80 USC)
   usdBalance?: number; // normalized USD balance (e.g. $5.05 USD)
   usdEquity?: number; // normalized USD equity (e.g. $5.05 USD)
+  initialDeposit?: number; // Initial starting deposit in USD (from MT5 initial deposit deal)
+  nativeInitialDeposit?: number; // Initial starting deposit in native currency
+  totalDeposits?: number;
+  totalWithdrawals?: number;
   margin: number;
   freeMargin: number;
   currency: string;

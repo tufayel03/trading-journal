@@ -101,6 +101,7 @@ export const TradeReplayModal: React.FC<Props> = ({
     setIsPlaying(false);
 
     const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);
+    const closeSec = trade.closeTime ? Math.floor(new Date(trade.closeTime).getTime() / 1000) : entrySec;
 
     // Request rich historical database with full depth (50,000+ bars cached)
     const url = `/api/candles?symbol=${encodeURIComponent(trade.symbol)}&timeframe=${timeframe}&all=true&force=${force}`;
@@ -110,6 +111,13 @@ export const TradeReplayModal: React.FC<Props> = ({
       .then(data => {
         if (data.candles && Array.isArray(data.candles) && data.candles.length > 0) {
           const sorted = [...data.candles].sort((a, b) => a.time - b.time);
+
+          // If trade close time is newer than available candles, automatically fetch latest live bars from MT5
+          if (!force && closeSec > 0 && sorted[sorted.length - 1]?.time < closeSec) {
+            loadCandles(true);
+            return;
+          }
+
           setCandles(sorted);
 
           // Find start index (e.g. 25 bars before entry)
@@ -394,7 +402,7 @@ export const TradeReplayModal: React.FC<Props> = ({
         {/* Right: Theme Toggle, MT5 Status Badge, Drawer Toggle, Close */}
         <div className="flex items-center gap-2 shrink-0">
           
-          {/* Chart Theme Selector (TradingView Light vs Dark vs Hollow) */}
+          {/* Chart Theme Selector (TradingView Light vs Dark vs MT5 Classic) */}
           <div className="flex items-center bg-[#0B0F19] p-0.5 rounded-lg border border-[#1F2937]">
             <button
               onClick={() => setTheme('light')}
@@ -406,6 +414,17 @@ export const TradeReplayModal: React.FC<Props> = ({
               title="TradingView Clean White (Default)"
             >
               <Sun className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setTheme('mt5')}
+              className={`px-2 py-1 rounded text-xs font-bold transition-all ${
+                theme === 'mt5'
+                  ? 'bg-blue-600 text-white shadow-md font-medium'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              title="MT5 Classic Candlestick Theme (White Bull / Solid Black Bear)"
+            >
+              <span className="font-mono text-[10px] font-bold">MT5</span>
             </button>
             <button
               onClick={() => setTheme('dark')}

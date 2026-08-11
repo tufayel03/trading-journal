@@ -64,24 +64,36 @@ TIMEFRAME_SECONDS = {
 KNOWN_TERMINAL_PATHS = [
     r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe",
     r"C:\Program Files\Exness MetaTrader 5\terminal64.exe",
+    r"C:\Program Files\Five Percent Online MetaTrader 5\terminal64.exe",
+    r"C:\Program Files\ACG Markets MT5 Terminal\terminal64.exe",
     r"C:\Program Files\MetaTrader 5\terminal64.exe",
 ]
 
 
-def init_mt5():
-    """Initializes connection to MT5 terminal."""
-    if mt5.terminal_info() is not None:
-        return True
+def init_mt5(terminal_path=None):
+    """Initializes connection to MT5 terminal, prioritizing Exness desktop terminal."""
+    if terminal_path and os.path.exists(terminal_path):
+        try:
+            if mt5.initialize(path=terminal_path, timeout=5000):
+                return True
+        except Exception:
+            pass
 
-    # Try known paths first
+    # 1. Try Exness known terminal executables first
     for path in KNOWN_TERMINAL_PATHS:
         if os.path.exists(path):
-            if mt5.initialize(path=path):
-                return True
+            try:
+                if mt5.initialize(path=path, timeout=5000):
+                    return True
+            except Exception:
+                pass
 
-    # Try default initialize
-    if mt5.initialize():
-        return True
+    # 2. Try default active desktop instance
+    try:
+        if mt5.initialize(timeout=5000):
+            return True
+    except Exception:
+        pass
 
     return False
 
@@ -100,31 +112,31 @@ def clean_symbol(symbol_name: str) -> str:
     return re.sub(r'(\.m|_m|ecn|#|c|m)$', '', s, flags=re.IGNORECASE).upper()
 
 
-def find_mt5_symbol(symbol_name: str, available_symbols: list) -> str:
-    """Matches a clean symbol (e.g. EURUSD, META) with MT5 symbol variations (e.g. EURUSD, EURUSDm, EURUSD.m)."""
+def find_mt5_symbol(symbol_name: str, available_symbols: list = None) -> str:
+    """Matches a clean symbol with actual MT5 symbol name instantly."""
     norm = clean_symbol(symbol_name)
+    candidates = [
+        symbol_name,
+        norm,
+        f"{norm}m",
+        f"{norm}.m",
+        f"{norm}#",
+        f"{norm}c",
+        f"{norm}ECN",
+        f"{norm}_m",
+        f"{norm}ECN_m",
+        f"{norm}ECN.m",
+    ]
+    if norm in ["USTE", "USTEC", "NAS100", "NQ", "US100"]:
+        candidates.extend(["USTEC_x100", "USTEC", "USTECm", "USTEC#", "NAS100", "US100"])
+    if norm in ["USOIL", "WTI", "OIL", "CRUDE"]:
+        candidates.extend(["USOIL", "USOILm", "USOIL.m", "USOIL#", "WTI"])
 
-    # Exact match
-    if symbol_name in available_symbols:
-        return symbol_name
-
-    # Case insensitive exact match
-    for s in available_symbols:
-        if s.upper() == symbol_name.upper():
-            return s
-
-    # Match normalized prefix
-    for s in available_symbols:
-        s_norm = clean_symbol(s)
-        if s_norm == norm:
-            return s
-
-    # Match contains
-    for s in available_symbols:
-        if norm == clean_symbol(s) or norm in s.upper():
-            return s
-
-    return symbol_name
+    for c in candidates:
+        if mt5.symbol_info(c) is not None:
+            mt5.symbol_select(c, True)
+            return c
+    return norm
 
 
 def get_decimal_places(symbol: str) -> int:
@@ -143,7 +155,6 @@ def get_decimal_places(symbol: str) -> int:
 
 def format_candle(rate_tuple, decimals: int) -> dict:
     """Formats an MT5 rate tuple to JSON candle object."""
-    # rate_tuple: (time, open, high, low, close, tick_volume, spread, real_volume)
     time_val = int(rate_tuple[0])
     open_val = round(float(rate_tuple[1]), decimals)
     high_val = round(float(rate_tuple[2]), decimals)
@@ -161,7 +172,7 @@ def format_candle(rate_tuple, decimals: int) -> dict:
     }
 
 
-def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_sec: int, available_symbols: list, count: int = 50000) -> list:
+def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_sec: int, available_symbols: list = None, count: int = 50000) -> list:
     """Fetches maximum authentic historical candles from MT5 for the given range and saves them to disk database."""
     norm_sym = clean_symbol(symbol)
     raw_tf = str(timeframe_str).strip()
@@ -186,7 +197,7 @@ def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_se
     mt5_tf = TIMEFRAME_MAP.get(raw_tf, TIMEFRAME_MAP.get(tf_key, mt5.TIMEFRAME_M5))
     tf_sec = TIMEFRAME_SECONDS.get(tf_key, 300)
 
-    matched_sym = find_mt5_symbol(norm_sym, available_symbols)
+    matched_sym = find_mt5_symbol(norm_sym)
     mt5.symbol_select(matched_sym, True)
 
     decimals = get_decimal_places(norm_sym)
@@ -194,7 +205,7 @@ def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_se
     rates = None
 
     # Case 1: User scrolled back to an older historical point (to_sec specified)
-    if to_sec > 0:
+    if to_sec > 0 and from_sec == 0:
         dt_to = datetime.fromtimestamp(to_sec, tz=timezone.utc)
         rates = mt5.copy_rates_from(matched_sym, mt5_tf, dt_to, count)
 
@@ -218,7 +229,7 @@ def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_se
 
     new_candles = [format_candle(r, decimals) for r in rates]
 
-    # Merge with existing file in disk database
+    # Merge with existing file in disk database (Preserve All Past History Forever)
     os.makedirs(CANDLES_DIR, exist_ok=True)
     target_file = os.path.join(CANDLES_DIR, f"{norm_sym}_{tf_key}.json")
 
@@ -241,7 +252,7 @@ def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_se
     merged = sorted(candle_map.values(), key=lambda x: x["time"])
 
     with open(target_file, "w", encoding="utf-8") as f:
-        json.dump(merged, f, indent=2)
+        json.dump(merged, f)
 
     return merged
 
@@ -288,20 +299,22 @@ def sync_all_trades_candles():
         if ct_sec > symbol_ranges[sym]["max_sec"]:
             symbol_ranges[sym]["max_sec"] = ct_sec
 
-    available_symbols = get_available_symbols()
     timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1mn"]
     results = {}
 
     for sym, r in symbol_ranges.items():
         results[sym] = {}
         # Pad range by 30 days on each side
-        from_sec = r["min_sec"] - 86400 * 30
+        from_sec = max(0, r["min_sec"] - 86400 * 30)
         to_sec = r["max_sec"] + 86400 * 30
 
         for tf in timeframes:
-            candles = fetch_and_save_candles(sym, tf, from_sec, to_sec, available_symbols)
-            results[sym][tf] = len(candles)
-            print(f"Synced {sym} [{tf}]: {len(candles)} authentic Exness MT5 candles")
+            try:
+                candles = fetch_and_save_candles(sym, tf, from_sec, to_sec, count=50000)
+                results[sym][tf] = len(candles)
+                print(f"[+] Synced {sym} [{tf}]: {len(candles)} candles accumulated permanently in vault.")
+            except Exception as e:
+                print(f"[-] Failed {sym} [{tf}]: {e}")
 
     return {"success": True, "results": results}
 
@@ -327,8 +340,6 @@ def main():
         sys.exit(1)
 
     try:
-        available_symbols = get_available_symbols()
-
         if args.all_trades:
             res = sync_all_trades_candles()
             if args.json:
@@ -337,24 +348,22 @@ def main():
                 print("All traded symbols synchronized with Exness MT5 successfully.")
         elif args.symbol:
             norm_sym = clean_symbol(args.symbol)
-            now_sec = int(datetime.now(timezone.utc).timestamp())
             from_sec = args.from_sec
             to_sec = args.to_sec
 
-            candles = fetch_and_save_candles(args.symbol, args.timeframe, from_sec, to_sec, available_symbols, count=args.count)
+            candles = fetch_and_save_candles(args.symbol, args.timeframe, from_sec, to_sec, count=args.count)
 
             output = {
                 "success": True,
                 "symbol": norm_sym,
                 "timeframe": args.timeframe,
-                "candles": candles,
                 "count": len(candles),
                 "source": "exness_mt5_live"
             }
             if args.json:
                 print(json.dumps(output))
             else:
-                print(f"Fetched {len(filtered)} candles for {norm_sym} ({args.timeframe}) from Exness MT5")
+                print(f"Fetched & Merged {len(candles)} candles for {norm_sym} ({args.timeframe}) permanently in database.")
         else:
             parser.print_help()
     finally:

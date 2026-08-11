@@ -72,10 +72,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const startingCapital = selectedAccount === 'ALL'
     ? (accounts.length > 0 
-        ? Math.max(0, Number((accounts.reduce((sum, a) => sum + (a.usdBalance || (a.isCent || a.currency === 'USC' ? (a.balance / 100) : a.balance) || 0), 0) - netProfit).toFixed(2)))
-        : (accountStatus?.balance !== undefined ? Math.max(0, Number(((accountStatus.isCent || accountStatus.currency === 'USC' ? accountStatus.balance / 100 : accountStatus.balance) - netProfit).toFixed(2))) : settings.initialBalance))
+        ? (accounts.some(a => a.status !== 'archived' && a.initialDeposit && a.initialDeposit > 0)
+            ? accounts.reduce((sum, a) => a.status === 'archived' ? sum : (sum + (a.initialDeposit || a.usdBalance || (a.isCent || a.currency === 'USC' ? a.balance / 100 : a.balance) || 0)), 0)
+            : Math.max(0, Number((accounts.reduce((sum, a) => a.status === 'archived' ? sum : (sum + (a.usdBalance || (a.isCent || a.currency === 'USC' ? (a.balance / 100) : a.balance) || 0)), 0) - netProfit).toFixed(2))))
+        : (accountStatus?.initialDeposit && accountStatus.initialDeposit > 0 ? accountStatus.initialDeposit : (accountStatus?.balance !== undefined ? Math.max(0, Number(((accountStatus.isCent || accountStatus.currency === 'USC' ? accountStatus.balance / 100 : accountStatus.balance) - netProfit).toFixed(2))) : settings.initialBalance)))
     : (currentSelectedAccountObj 
-        ? Math.max(0, Number((currentSelectedAccountObj.balance - (isCentAccount ? netProfit * 100 : netProfit)).toFixed(2))) 
+        ? (currentSelectedAccountObj.initialDeposit && currentSelectedAccountObj.initialDeposit > 0
+            ? (isCentAccount ? (currentSelectedAccountObj.nativeInitialDeposit || currentSelectedAccountObj.initialDeposit * 100) : currentSelectedAccountObj.initialDeposit)
+            : Math.max(0, Number((currentSelectedAccountObj.balance - (isCentAccount ? netProfit * 100 : netProfit)).toFixed(2))))
         : settings.initialBalance);
 
   const displayProfit = isCentAccount ? (netProfit * 100) : netProfit;
