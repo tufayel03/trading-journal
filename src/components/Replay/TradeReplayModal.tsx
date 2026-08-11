@@ -72,6 +72,8 @@ export const TradeReplayModal: React.FC<Props> = ({
 
   const chartRef = useRef<TradingViewReplayChartRef>(null);
   const playTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeReplayTimestampRef = useRef<number | null>(null);
+  const prevTradeIdRef = useRef<string | number | null>(null);
 
   // Full 9 timeframe options: 1m, 5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M
   const timeframes = [
@@ -94,7 +96,14 @@ export const TradeReplayModal: React.FC<Props> = ({
   const prevTrade = currentTradeIndex > 0 ? allTrades[currentTradeIndex - 1] : null;
   const nextTrade = currentTradeIndex >= 0 && currentTradeIndex < allTrades.length - 1 ? allTrades[currentTradeIndex + 1] : null;
 
-  // Load candles function
+  // Keep active replay timestamp synced with current bar
+  useEffect(() => {
+    if (candles[currentIndex]) {
+      activeReplayTimestampRef.current = candles[currentIndex].time;
+    }
+  }, [currentIndex, candles]);
+
+  // Load candles function with seamless timestamp preservation across timeframes
   const loadCandles = (force: boolean = false) => {
     if (force) setIsSyncingMT5(true);
     else setIsLoading(true);
@@ -102,6 +111,18 @@ export const TradeReplayModal: React.FC<Props> = ({
 
     const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);
     const closeSec = trade.closeTime ? Math.floor(new Date(trade.closeTime).getTime() / 1000) : entrySec;
+
+    const currentTradeId = trade.ticket || trade.id;
+    const isSameTrade = prevTradeIdRef.current === currentTradeId;
+    if (!isSameTrade) {
+      activeReplayTimestampRef.current = null;
+    }
+    prevTradeIdRef.current = currentTradeId;
+
+    // Preserve exact replay timestamp when switching timeframes
+    const targetTimestamp = (isSameTrade && activeReplayTimestampRef.current)
+      ? activeReplayTimestampRef.current
+      : entrySec;
 
     // Request rich historical database with full depth (50,000+ bars cached)
     const url = `/api/candles?symbol=${encodeURIComponent(trade.symbol)}&timeframe=${timeframe}&all=true&force=${force}`;
@@ -120,10 +141,20 @@ export const TradeReplayModal: React.FC<Props> = ({
 
           setCandles(sorted);
 
-          // Find start index (e.g. 25 bars before entry)
-          const entryIndex = sorted.findIndex(c => c.time >= entrySec);
-          const startIndex = entryIndex >= 0 ? Math.max(0, entryIndex - 25) : Math.max(0, sorted.length - 50);
-          setCurrentIndex(startIndex);
+          // Find exact candle corresponding to targetTimestamp in the new timeframe
+          let targetIndex = sorted.findIndex(c => c.time >= targetTimestamp);
+          if (targetIndex === -1) {
+            targetIndex = sorted.length - 1;
+          } else if (targetIndex > 0 && sorted[targetIndex].time > targetTimestamp) {
+            targetIndex = targetIndex - 1;
+          }
+
+          // If brand new trade modal opening, provide a slight pre-trade context lead-in
+          if (!isSameTrade) {
+            targetIndex = Math.max(0, targetIndex - 15);
+          }
+
+          setCurrentIndex(Math.max(0, Math.min(sorted.length - 1, targetIndex)));
         } else {
           setCandles([]);
         }
@@ -365,7 +396,13 @@ export const TradeReplayModal: React.FC<Props> = ({
             {timeframes.map(tf => (
               <button
                 key={tf.value}
-                onClick={() => setTimeframe(tf.value)}
+                onClick={() => {
+                  if (timeframe === tf.value) return;
+                  if (candles[currentIndex]) {
+                    activeReplayTimestampRef.current = candles[currentIndex].time;
+                  }
+                  setTimeframe(tf.value);
+                }}
                 className={`px-2 py-1 rounded text-xs font-bold transition-all ${
                   timeframe === tf.value
                     ? 'bg-emerald-500 text-black shadow-md font-mono'
