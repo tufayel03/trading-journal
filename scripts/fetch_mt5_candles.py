@@ -64,14 +64,11 @@ TIMEFRAME_SECONDS = {
 KNOWN_TERMINAL_PATHS = [
     r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe",
     r"C:\Program Files\Exness MetaTrader 5\terminal64.exe",
-    r"C:\Program Files\Five Percent Online MetaTrader 5\terminal64.exe",
-    r"C:\Program Files\ACG Markets MT5 Terminal\terminal64.exe",
-    r"C:\Program Files\MetaTrader 5\terminal64.exe",
 ]
 
 
 def init_mt5(terminal_path=None):
-    """Initializes connection to MT5 terminal, prioritizing Exness desktop terminal."""
+    """Initializes connection strictly to Exness MT5 terminal."""
     if terminal_path and os.path.exists(terminal_path):
         try:
             if mt5.initialize(path=terminal_path, timeout=5000):
@@ -79,7 +76,7 @@ def init_mt5(terminal_path=None):
         except Exception:
             pass
 
-    # 1. Try Exness known terminal executables first
+    # 1. Connect directly to installed Exness terminal
     for path in KNOWN_TERMINAL_PATHS:
         if os.path.exists(path):
             try:
@@ -88,10 +85,14 @@ def init_mt5(terminal_path=None):
             except Exception:
                 pass
 
-    # 2. Try default active desktop instance
+    # 2. Check if currently active running instance is Exness
     try:
         if mt5.initialize(timeout=5000):
-            return True
+            acc = mt5.account_info()
+            term = mt5.terminal_info()
+            if (acc and "exness" in str(acc.server).lower()) or (term and ("exness" in str(term.name).lower() or "exness" in str(term.path).lower())):
+                return True
+            mt5.shutdown()
     except Exception:
         pass
 
