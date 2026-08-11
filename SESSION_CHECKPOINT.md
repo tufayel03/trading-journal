@@ -17,6 +17,7 @@
   - **BUY Trades:** Blue entry notch (`—`) + Blue upward triangle arrow (`▲`) at `openPrice`; Red exit notch (`—`) + Red downward triangle arrow (`▼`) at `closePrice`.
   - **SELL Trades:** Red entry notch (`—`) + Red downward triangle arrow (`▼`) at `openPrice`; Blue exit notch (`—`) + Blue upward triangle arrow (`▲`) at `closePrice`.
   - **Connecting Dashed Trendline:** Blue (BUY) or Red (SELL) dashed line connecting entry to exit across the chart. During replay playback, dynamically stretches from the Entry notch to the live active replay bar.
+  - **Instant Timeframe Switching (< 5ms):** Timeframe switches read directly from the pre-downloaded local disk JSON vault without blocking on Python or displaying loading spinners.
   - **Timeframe Continuity & Intra-Bar Forming Candle:** Seamlessly preserves both the exact timestamp AND the exact current price when switching between timeframes (e.g. 1m ➔ 4h, 1D). Mid-candle forming bars on higher timeframes have their live close price dynamically synced to the exact replay price rather than jumping to the finished bar's close.
   - **Same-Bar Separation:** Automatic horizontal offset for scalps where entry and exit occurred within the same candle bar.
   - **Interactive Hover Tooltip:** Floating MT5-style popup with ticket number, lots, open/close prices, and net P&L with pips.
