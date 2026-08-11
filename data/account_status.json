@@ -5,11 +5,11 @@
       "server": "FivePercentOnline-Real",
       "name": "HS1-100K Md Tufayel ahamed",
       "balance": 99988.65,
-      "equity": 99977.5,
+      "equity": 99983.6,
       "margin": 882.79,
-      "freeMargin": 99094.71,
+      "freeMargin": 99100.81,
       "usdBalance": 99988.65,
-      "usdEquity": 99977.5,
+      "usdEquity": 99983.6,
       "initialDeposit": 100000.0,
       "nativeInitialDeposit": 100000.0,
       "totalDeposits": 100000.0,
@@ -18,7 +18,7 @@
       "isCent": false,
       "status": "connected",
       "openPositionsCount": 1,
-      "lastUpdate": "2026-08-11T01:16:17.000Z"
+      "lastUpdate": "2026-08-11T01:25:17.000Z"
     },
     "104675892": {
       "login": "104675892",
@@ -54,18 +54,18 @@
       "isCent": false,
       "status": "connected",
       "openPositionsCount": 0,
-      "lastUpdate": "2026-08-11T01:16:45.000Z"
+      "lastUpdate": "2026-08-11T01:25:24.000Z"
     },
     "276133463": {
       "login": "276133463",
       "server": "Exness-MT5Real26",
       "name": "Pro",
       "balance": 291.16,
-      "equity": 296.7,
+      "equity": 296.78,
       "margin": 16.01,
-      "freeMargin": 280.69,
+      "freeMargin": 280.77,
       "usdBalance": 291.16,
-      "usdEquity": 296.7,
+      "usdEquity": 296.78,
       "initialDeposit": 200.0,
       "nativeInitialDeposit": 200.0,
       "totalDeposits": 200.0,
@@ -74,7 +74,7 @@
       "isCent": false,
       "status": "connected",
       "openPositionsCount": 3,
-      "lastUpdate": "2026-08-11T01:16:55.000Z"
+      "lastUpdate": "2026-08-11T01:25:10.000Z"
     }
   },
   "account": {
@@ -82,11 +82,11 @@
     "server": "FivePercentOnline-Real",
     "name": "HS1-100K Md Tufayel ahamed",
     "balance": 99988.65,
-    "equity": 99977.5,
+    "equity": 99983.6,
     "margin": 882.79,
-    "freeMargin": 99094.71,
+    "freeMargin": 99100.81,
     "usdBalance": 99988.65,
-    "usdEquity": 99977.5,
+    "usdEquity": 99983.6,
     "initialDeposit": 100000.0,
     "nativeInitialDeposit": 100000.0,
     "totalDeposits": 100000.0,
@@ -95,65 +95,10 @@
     "isCent": false,
     "status": "connected",
     "openPositionsCount": 1,
-    "lastUpdate": "2026-08-11T01:16:17.000Z"
+    "lastUpdate": "2026-08-11T01:25:17.000Z"
   },
-  "openPositions": [
-    {
-      "ticket": "790895962",
-      "symbol": "ORCL",
-      "direction": "BUY",
-      "lotSize": 0.01,
-      "openPrice": 139.76,
-      "currentPrice": 151.27,
-      "stopLoss": 80.0,
-      "takeProfit": 300.0,
-      "profit": 11.51,
-      "nativeProfit": 11.51,
-      "openTime": "2026-08-03T16:42:38.000Z",
-      "comment": "",
-      "accountLogin": "276133463",
-      "accountServer": "Exness-MT5Real26",
-      "accountCurrency": "USD",
-      "isCent": false
-    },
-    {
-      "ticket": "792989502",
-      "symbol": "BTCUSDT",
-      "direction": "BUY",
-      "lotSize": 0.01,
-      "openPrice": 64887.8,
-      "currentPrice": 63972.88,
-      "stopLoss": 0.0,
-      "takeProfit": 100000.0,
-      "profit": -9.15,
-      "nativeProfit": -9.15,
-      "openTime": "2026-08-05T19:52:56.000Z",
-      "comment": "",
-      "accountLogin": "276133463",
-      "accountServer": "Exness-MT5Real26",
-      "accountCurrency": "USD",
-      "isCent": false
-    },
-    {
-      "ticket": "795799019",
-      "symbol": "ORCL",
-      "direction": "BUY",
-      "lotSize": 0.01,
-      "openPrice": 148.09,
-      "currentPrice": 151.27,
-      "stopLoss": 0.0,
-      "takeProfit": 0.0,
-      "profit": 3.18,
-      "nativeProfit": 3.18,
-      "openTime": "2026-08-10T13:46:42.000Z",
-      "comment": "",
-      "accountLogin": "276133463",
-      "accountServer": "Exness-MT5Real26",
-      "accountCurrency": "USD",
-      "isCent": false
-    }
-  ],
+  "openPositions": [],
   "totalSyncedDeals": 55,
-  "lastSync": "2026-08-11T01:16:56.000Z",
+  "lastSync": "2026-08-11T01:25:24.000Z",
   "removedAccounts": []
 }
