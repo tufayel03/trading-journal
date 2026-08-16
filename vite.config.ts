@@ -1000,22 +1000,34 @@ function mt5SyncPlugin(): Plugin {
         }
 
         try {
+          const isCurrentlyEnabled = fs.existsSync(startupLnkPath);
           const installScript = path.resolve(__dirname, 'scripts', 'install_startup.py');
-          execSync(`python "${installScript}"`, { cwd: __dirname, timeout: 15000, encoding: 'utf-8' });
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            success: true,
-            isStartupEnabled: true,
-            message: 'PC Startup Auto-Sync enabled! All accounts will sync automatically whenever Windows boots.'
-          }));
+          
+          if (isCurrentlyEnabled) {
+            execSync(`python "${installScript}" --remove`, { cwd: __dirname, timeout: 15000, encoding: 'utf-8' });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: true,
+              isStartupEnabled: false,
+              message: 'Windows Startup Auto-Sync disabled. MT5 will only sync when Trading Journal is active.'
+            }));
+          } else {
+            execSync(`python "${installScript}"`, { cwd: __dirname, timeout: 15000, encoding: 'utf-8' });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              success: true,
+              isStartupEnabled: true,
+              message: 'PC Startup Auto-Sync enabled! All accounts will sync automatically whenever Windows boots.'
+            }));
+          }
         } catch (err: any) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, error: err.message }));
         }
       };
 
-      // Fast, non-blocking periodic multi-account background sync every 3.5s
+      // Periodic multi-account background sync while Trading Journal dev server is active
+      // Automatically syncs whenever MT5 is open, and never forcefully launches MT5 if closed.
       const bgSyncInterval = setInterval(() => {
         if (isSyncInProgress) return;
         isSyncInProgress = true;
@@ -1029,7 +1041,7 @@ function mt5SyncPlugin(): Plugin {
             } catch {}
           }
         });
-      }, 3500);
+      }, 5000);
       server.httpServer?.on('close', () => clearInterval(bgSyncInterval));
 
       server.middlewares.use('/api/webhook/trade', handleWebhookReq);

@@ -67,8 +67,56 @@ KNOWN_TERMINAL_PATHS = [
 ]
 
 
+def is_mt5_running():
+    """Checks if any MetaTrader 5 terminal process is currently active."""
+    try:
+        import ctypes, ctypes.wintypes
+        TH32CS_SNAPPROCESS = 0x00000002
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ('dwSize', ctypes.wintypes.DWORD),
+                ('cntUsage', ctypes.wintypes.DWORD),
+                ('th32ProcessID', ctypes.wintypes.DWORD),
+                ('th32DefaultHeapID', ctypes.c_void_p),
+                ('th32ModuleID', ctypes.wintypes.DWORD),
+                ('cntThreads', ctypes.wintypes.DWORD),
+                ('th32ParentProcessID', ctypes.wintypes.DWORD),
+                ('pcPriClassBase', ctypes.c_long),
+                ('dwFlags', ctypes.wintypes.DWORD),
+                ('szExeFile', ctypes.c_char * 260)
+            ]
+        hSnapshot = ctypes.windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if hSnapshot == -1:
+            return False
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        success = ctypes.windll.kernel32.Process32First(hSnapshot, ctypes.byref(pe))
+        found = False
+        target_names = [b'terminal64.exe', b'terminal.exe', b'metatrader.exe']
+        while success:
+            if pe.szExeFile.lower() in target_names:
+                found = True
+                break
+            success = ctypes.windll.kernel32.Process32Next(hSnapshot, ctypes.byref(pe))
+        ctypes.windll.kernel32.CloseHandle(hSnapshot)
+        return found
+    except Exception:
+        return False
+
+EXNESS_TERMINAL_PATHS = [
+    r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe",
+    r"C:\Program Files\Exness MetaTrader 5\terminal64.exe",
+    r"C:\Program Files\MetaTrader 5\terminal64.exe",
+]
+
 def init_mt5(terminal_path=None):
-    """Initializes connection strictly to Exness MT5 terminal."""
+    """Initializes connection strictly to Exness MT5 terminal for authentic candle history."""
+    try:
+        mt5.shutdown()
+    except Exception:
+        pass
+
+    # 1. Explicit terminal path if supplied
     if terminal_path and os.path.exists(terminal_path):
         try:
             if mt5.initialize(path=terminal_path, timeout=5000):
@@ -76,8 +124,8 @@ def init_mt5(terminal_path=None):
         except Exception:
             pass
 
-    # 1. Connect directly to installed Exness terminal
-    for path in KNOWN_TERMINAL_PATHS:
+    # 2. Priority: Connect directly to installed Exness terminal
+    for path in EXNESS_TERMINAL_PATHS:
         if os.path.exists(path):
             try:
                 if mt5.initialize(path=path, timeout=5000):
@@ -85,14 +133,10 @@ def init_mt5(terminal_path=None):
             except Exception:
                 pass
 
-    # 2. Check if currently active running instance is Exness
+    # 3. Fallback to active running MT5 instance
     try:
         if mt5.initialize(timeout=5000):
-            acc = mt5.account_info()
-            term = mt5.terminal_info()
-            if (acc and "exness" in str(acc.server).lower()) or (term and ("exness" in str(term.name).lower() or "exness" in str(term.path).lower())):
-                return True
-            mt5.shutdown()
+            return True
     except Exception:
         pass
 

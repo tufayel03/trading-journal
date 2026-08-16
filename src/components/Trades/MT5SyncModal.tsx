@@ -430,8 +430,8 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
       const res = await fetch('/api/autosync/setup-startup', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        setStartupState(prev => ({ ...prev, isStartupEnabled: true, isDaemonRunning: true }));
-        setSyncMessage('Windows PC Startup Auto-Sync registered successfully! All accounts will auto-sync on boot.');
+        setStartupState(prev => ({ ...prev, isStartupEnabled: !!data.isStartupEnabled, isDaemonRunning: !!data.isStartupEnabled }));
+        setSyncMessage(data.message || (data.isStartupEnabled ? 'PC Startup Auto-Sync enabled' : 'PC Startup Auto-Sync disabled'));
       }
     } catch (e: any) {
       setSyncMessage(`Startup setup notice: ${e.message}`);
@@ -478,14 +478,19 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-extrabold text-sm text-white">PC Startup Multi-Account Auto-Sync</span>
+                    <span className="font-extrabold text-sm text-white">Live MT5 Multi-Account Auto-Sync</span>
                     <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/40 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Windows Boot Ready
+                      Journal Sync Active
                     </span>
+                    {startupState.isStartupEnabled && (
+                      <span className="text-[10px] font-bold bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/40">
+                        PC Boot Sync Enabled
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-gray-300 mt-1">
-                    When you turn on your PC, HyperTrade automatically connects to all installed terminals (The5ers, Exness #104675892, #160096169 Cent, #276133463, etc.) and synchronizes all trades and live positions.
+                    HyperTrade syncs seamlessly whenever your Trading Journal is open and connects to your active MT5 terminals (The5ers, Exness #104675892, #160096169 Cent, #276133463, etc.) without force-opening closed terminals.
                   </p>
                 </div>
               </div>
@@ -504,11 +509,11 @@ void OnChartEvent(const int id, const long& lparam, const double& dparam, const 
                 <button
                   onClick={handleSetupStartupAutoSync}
                   disabled={isSettingUpStartup}
-                  className="px-3 py-2 bg-[#1F2937] hover:bg-[#374151] text-gray-200 hover:text-white font-semibold text-xs rounded-lg border border-gray-700 flex items-center gap-1.5 transition-colors"
-                  title="Configure Windows Startup Shortcut"
+                  className={`px-3 py-2 ${startupState.isStartupEnabled ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300' : 'bg-[#1F2937] border-gray-700 text-gray-200'} hover:bg-[#374151] hover:text-white font-semibold text-xs rounded-lg border flex items-center gap-1.5 transition-colors`}
+                  title={startupState.isStartupEnabled ? "Click to disable Windows Startup sync" : "Click to enable Windows Startup sync"}
                 >
-                  <Power className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{startupState.isStartupEnabled ? 'Startup Enabled' : 'Enable on Boot'}</span>
+                  <Power className={`w-3.5 h-3.5 ${startupState.isStartupEnabled ? 'text-emerald-400' : 'text-gray-400'}`} />
+                  <span>{startupState.isStartupEnabled ? 'Startup: Enabled' : 'Startup: Disabled'}</span>
                 </button>
               </div>
             </div>

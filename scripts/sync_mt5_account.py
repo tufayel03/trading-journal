@@ -72,6 +72,47 @@ TERMINAL_CONFIGS = [
     }
 ]
 
+def is_mt5_running():
+    """Checks if any MetaTrader 5 terminal process is currently active."""
+    try:
+        import ctypes, ctypes.wintypes
+        TH32CS_SNAPPROCESS = 0x00000002
+        class PROCESSENTRY32(ctypes.Structure):
+            _fields_ = [
+                ('dwSize', ctypes.wintypes.DWORD),
+                ('cntUsage', ctypes.wintypes.DWORD),
+                ('th32ProcessID', ctypes.wintypes.DWORD),
+                ('th32DefaultHeapID', ctypes.c_void_p),
+                ('th32ModuleID', ctypes.wintypes.DWORD),
+                ('cntThreads', ctypes.wintypes.DWORD),
+                ('th32ParentProcessID', ctypes.wintypes.DWORD),
+                ('pcPriClassBase', ctypes.c_long),
+                ('dwFlags', ctypes.wintypes.DWORD),
+                ('szExeFile', ctypes.c_char * 260)
+            ]
+        hSnapshot = ctypes.windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        if hSnapshot == -1:
+            return False
+        pe = PROCESSENTRY32()
+        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        success = ctypes.windll.kernel32.Process32First(hSnapshot, ctypes.byref(pe))
+        found = False
+        target_names = [b'terminal64.exe', b'terminal.exe', b'metatrader.exe']
+        while success:
+            if pe.szExeFile.lower() in target_names:
+                found = True
+                break
+            success = ctypes.windll.kernel32.Process32Next(hSnapshot, ctypes.byref(pe))
+        ctypes.windll.kernel32.CloseHandle(hSnapshot)
+        return found
+    except Exception:
+        try:
+            import subprocess
+            out = subprocess.check_output(['tasklist', '/fi', 'imagename eq terminal64.exe'], text=True, timeout=2)
+            return 'terminal64.exe' in out.lower()
+        except Exception:
+            return False
+
 def format_iso(timestamp):
     if not timestamp or timestamp <= 0:
         dt = datetime.now(timezone.utc)
@@ -477,6 +518,20 @@ def sync_all():
     print(f"  Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"================================================================")
 
+    mt5_active = is_mt5_running()
+    allow_force_launch = "--launch" in sys.argv or "--force-open" in sys.argv
+
+    if not mt5_active and not allow_force_launch:
+        print("[*] MetaTrader 5 is not currently running.")
+        print("    Auto-sync skipped cleanly (will sync automatically once MT5 is opened).")
+        if os.path.exists(ACCOUNT_STATUS_FILE):
+            try:
+                with open(ACCOUNT_STATUS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {"success": True, "message": "MT5 is closed. Sync skipped cleanly."}
+
     all_accounts = {}
     all_open_positions = []
     all_new_trades = []
@@ -515,8 +570,8 @@ def sync_all():
     except Exception:
         pass
 
-    # 2. Iterate through configured terminals if requested or if no terminal was active
-    should_scan_all_terminals = "--all-terminals" in sys.argv or not has_active_terminal
+    # 2. Iterate through configured terminals ONLY if explicitly requested with --all-terminals / --launch
+    should_scan_all_terminals = ("--all-terminals" in sys.argv) and allow_force_launch
     if should_scan_all_terminals:
         for config in TERMINAL_CONFIGS:
             term_name = config["name"]

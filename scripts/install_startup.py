@@ -55,8 +55,36 @@ s.Save
     except Exception as e:
         print(f"[!] Note on daemon start: {e}")
 
-    print("\nAll MT5 accounts will now auto-sync whenever your PC turns on!")
-    return os.path.exists(SHORTCUT_PATH)
+def remove_startup():
+    print("================================================================")
+    print("  HYPERTRADE PRO - REMOVE STARTUP AUTO-SYNC")
+    print("================================================================")
+    if os.path.exists(SHORTCUT_PATH):
+        try:
+            os.remove(SHORTCUT_PATH)
+            print(f"[SUCCESS] Removed Windows Startup shortcut from:")
+            print(f"  {SHORTCUT_PATH}")
+        except Exception as e:
+            print(f"Error removing shortcut: {e}")
+    else:
+        print("[*] Startup shortcut does not exist.")
+
+    # Stop daemon if running
+    pid_file = os.path.join(PROJECT_ROOT, "data", "auto_sync_daemon.pid")
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 9)
+            os.remove(pid_file)
+            print("[SUCCESS] Stopped running background daemon.")
+        except Exception:
+            pass
+
+    return True
 
 if __name__ == "__main__":
-    install_startup()
+    if "--remove" in sys.argv or "--uninstall" in sys.argv:
+        remove_startup()
+    else:
+        install_startup()
