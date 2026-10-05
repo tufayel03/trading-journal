@@ -32,6 +32,7 @@ import { TradingViewGoToModal } from './TradingViewGoToModal';
 import { TradingViewTopBar } from './TradingViewTopBar';
 import { TradingViewReplayBar } from './TradingViewReplayBar';
 import { TradingViewRightDock } from './TradingViewRightDock';
+import { OfficialTradingViewChart, OfficialTradingViewChartRef } from './OfficialTradingViewChart';
 
 interface Props {
   isOpen: boolean;
@@ -62,6 +63,19 @@ export const TradeReplayModal: React.FC<Props> = ({
   const [isGoToOpen, setIsGoToOpen] = useState<boolean>(false);
   const [theme, setTheme] = useState<ChartTheme>('dark'); // Default to authentic TradingView Dark theme
   const [rightDockTab, setRightDockTab] = useState<'details' | 'notes' | 'drawings' | null>(null);
+  const [useOfficialTV, setUseOfficialTV] = useState<boolean>(() => {
+    return localStorage.getItem('replay_chart_engine') === 'official_tv';
+  });
+
+  const officialTvRef = useRef<OfficialTradingViewChartRef>(null);
+
+  const handleToggleEngine = () => {
+    setUseOfficialTV(prev => {
+      const next = !prev;
+      localStorage.setItem('replay_chart_engine', next ? 'official_tv' : 'standard');
+      return next;
+    });
+  };
 
   const precision = getSymbolPrecision(trade.symbol);
 
@@ -369,6 +383,7 @@ export const TradeReplayModal: React.FC<Props> = ({
             activeReplayPriceRef.current = candles[currentIndex].close;
           }
           setTimeframe(tf);
+          officialTvRef.current?.setResolution(tf);
         }}
         isDarkTheme={theme === 'dark'}
         onThemeToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -381,6 +396,8 @@ export const TradeReplayModal: React.FC<Props> = ({
         onSelectTrade={onSelectTrade}
         onRefreshCandles={() => loadCandles(true)}
         isSyncingCandles={isSyncingMT5}
+        useOfficialTV={useOfficialTV}
+        onToggleEngine={handleToggleEngine}
       />
 
       {/* MAIN BODY: Chart Canvas + Right Drawer */}
@@ -389,7 +406,17 @@ export const TradeReplayModal: React.FC<Props> = ({
           {/* Replay Chart Container */}
           <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden relative">
             
-            {isLoading ? (
+            {useOfficialTV ? (
+              <div className="flex-1 min-h-0 w-full relative">
+                <OfficialTradingViewChart
+                  ref={officialTvRef}
+                  trade={trade}
+                  timeframe={timeframe}
+                  isDarkTheme={theme === 'dark'}
+                  onFallbackRequested={handleToggleEngine}
+                />
+              </div>
+            ) : isLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 bg-white dark:bg-[#0B0F19]">
                 <Zap className="w-8 h-8 text-emerald-500 animate-spin" />
                 <span className="text-xs font-bold font-mono text-gray-700 dark:text-gray-300">Loading Historical Broker Candles for {trade.symbol}...</span>

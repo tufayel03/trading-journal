@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { IChartApi, ISeriesApi, UTCTimestamp } from 'lightweight-charts';
 import { Trade } from '../../types';
 import { Candle } from './TradingViewReplayChart';
@@ -25,10 +25,15 @@ export const MT5TradeOverlay: React.FC<Props> = ({
   const [, setTrigger] = useState<number>(0);
   const [hovered, setHovered] = useState<boolean>(false);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const lastCoordsRef = useRef<{ entryX: number; entryY: number; endX: number; endY: number } | null>(null);
 
-  // Force re-render on chart zoom/pan/scroll
+  // Force re-render on chart zoom/pan/scroll with RAF to stay smooth
   const recompute = useCallback(() => {
-    setTrigger(t => t + 1);
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    animFrameRef.current = requestAnimationFrame(() => {
+      setTrigger(t => t + 1);
+    });
   }, []);
 
   useEffect(() => {
@@ -37,6 +42,7 @@ export const MT5TradeOverlay: React.FC<Props> = ({
     chart.timeScale().subscribeVisibleTimeRangeChange(recompute);
 
     return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(recompute);
         chart.timeScale().unsubscribeVisibleTimeRangeChange(recompute);
@@ -45,7 +51,11 @@ export const MT5TradeOverlay: React.FC<Props> = ({
   }, [chart, recompute]);
 
   if (!chart || !series || candles.length === 0 || currentSlice.length === 0) {
-    return null;
+    if (lastCoordsRef.current) {
+      // Keep displaying previous coords while new candles load during timeframe shift
+    } else {
+      return null;
+    }
   }
 
   const isBuy = trade.direction === 'BUY';
@@ -58,7 +68,7 @@ export const MT5TradeOverlay: React.FC<Props> = ({
 
   // Find closest candles in full history
   let closestEntryCandle = candles[0];
-  let minEntryDiff = Math.abs(candles[0].time - entrySec);
+  let minEntryDiff = candles[0] ? Math.abs(candles[0].time - entrySec) : 0;
   for (const c of candles) {
     const diff = Math.abs(c.time - entrySec);
     if (diff < minEntryDiff) {
@@ -68,7 +78,7 @@ export const MT5TradeOverlay: React.FC<Props> = ({
   }
 
   let closestExitCandle = candles[0];
-  let minExitDiff = Math.abs(candles[0].time - exitSec);
+  let minExitDiff = candles[0] ? Math.abs(candles[0].time - exitSec) : 0;
   for (const c of candles) {
     const diff = Math.abs(c.time - exitSec);
     if (diff < minExitDiff) {
@@ -78,41 +88,55 @@ export const MT5TradeOverlay: React.FC<Props> = ({
   }
 
   // Check if entry and exit are reached in current replay slice
-  const isEntryReached = currentSlice.some(c => c.time >= closestEntryCandle.time);
-  const isExitReached = currentSlice.some(c => c.time >= closestExitCandle.time);
+  const isEntryReached = currentSlice.some(c => c.time >= (closestEntryCandle?.time ?? entrySec));
+  const isExitReached = currentSlice.some(c => c.time >= (closestExitCandle?.time ?? exitSec));
   const currentCandle = currentSlice[currentSlice.length - 1];
 
-  if (!isEntryReached) {
+  if (!isEntryReached && !lastCoordsRef.current) {
     return null;
   }
 
   // Convert Time & Price to Pixel Coordinates
-  const rawEntryX = chart.timeScale().timeToCoordinate(closestEntryCandle.time as UTCTimestamp);
+  const rawEntryX = closestEntryCandle ? chart.timeScale().timeToCoordinate(closestEntryCandle.time as UTCTimestamp) : null;
   const entryY = series.priceToCoordinate(trade.openPrice);
-
-  if (rawEntryX === null || entryY === null) {
-    return null;
-  }
 
   let rawEndX: number | null = null;
   let endY: number | null = null;
 
-  if (isExitReached) {
+  if (isExitReached && closestExitCandle) {
     rawEndX = chart.timeScale().timeToCoordinate(closestExitCandle.time as UTCTimestamp);
     endY = series.priceToCoordinate(trade.closePrice || closestExitCandle.close);
-  } else {
+  } else if (currentCandle) {
     rawEndX = chart.timeScale().timeToCoordinate(currentCandle.time as UTCTimestamp);
     endY = series.priceToCoordinate(currentCandle.close);
   }
 
-  if (rawEndX === null || endY === null) {
+  // If timeScale calculation is mid-frame or in-between, fall back to cached coordinates
+  let finalEntryX = rawEntryX;
+  let finalEntryY = entryY;
+  let finalEndX = rawEndX;
+  let finalEndY = endY;
+
+  if (finalEntryX !== null && finalEntryY !== null && finalEndX !== null && finalEndY !== null) {
+    lastCoordsRef.current = {
+      entryX: finalEntryX,
+      entryY: finalEntryY,
+      endX: finalEndX,
+      endY: finalEndY
+    };
+  } else if (lastCoordsRef.current) {
+    finalEntryX = lastCoordsRef.current.entryX;
+    finalEntryY = lastCoordsRef.current.entryY;
+    finalEndX = lastCoordsRef.current.endX;
+    finalEndY = lastCoordsRef.current.endY;
+  } else {
     return null;
   }
 
   // If trade opened and closed within the exact same candle bar, apply a slight horizontal offset
-  const isSameBar = isExitReached && Math.abs(rawEntryX - rawEndX) < 8;
-  const entryX = isSameBar ? rawEntryX - 4.5 : rawEntryX;
-  const endX = isSameBar ? rawEndX + 4.5 : rawEndX;
+  const isSameBar = isExitReached && Math.abs(finalEntryX - finalEndX) < 8;
+  const entryX = isSameBar ? finalEntryX - 4.5 : finalEntryX;
+  const endX = isSameBar ? finalEndX + 4.5 : finalEndX;
 
   // Authentic MT5 Colors
   const buyColor = '#0084FF';  // MT5 Sky Blue

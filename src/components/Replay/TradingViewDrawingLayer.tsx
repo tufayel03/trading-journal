@@ -89,14 +89,19 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
   // Listen to chart pan / zoom / visible range changes to trigger re-renders of drawing coordinates
   useEffect(() => {
     if (!chart) return;
+    let animId: number | null = null;
     const handleRangeChange = () => {
-      setRenderTrigger(t => t + 1);
+      if (animId) cancelAnimationFrame(animId);
+      animId = requestAnimationFrame(() => {
+        setRenderTrigger(t => t + 1);
+      });
     };
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
     chart.timeScale().subscribeVisibleTimeRangeChange(handleRangeChange);
 
     return () => {
+      if (animId) cancelAnimationFrame(animId);
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
         chart.timeScale().unsubscribeVisibleTimeRangeChange(handleRangeChange);

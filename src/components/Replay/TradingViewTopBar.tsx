@@ -42,6 +42,8 @@ interface Props {
   onSelectTrade?: (trade: Trade) => void;
   onRefreshCandles?: () => void;
   isSyncingCandles?: boolean;
+  useOfficialTV?: boolean;
+  onToggleEngine?: () => void;
 }
 
 export const TradingViewTopBar: React.FC<Props> = ({
@@ -58,7 +60,9 @@ export const TradingViewTopBar: React.FC<Props> = ({
   currentTradeIndex = 0,
   onSelectTrade,
   onRefreshCandles,
-  isSyncingCandles = false
+  isSyncingCandles = false,
+  useOfficialTV = false,
+  onToggleEngine
 }) => {
   const [showIndicatorsModal, setShowIndicatorsModal] = useState(false);
   const [chartStyle, setChartStyle] = useState<'candles' | 'bars' | 'line'>('candles');
@@ -193,6 +197,22 @@ export const TradingViewTopBar: React.FC<Props> = ({
           <RotateCcw className="w-3.5 h-3.5" />
           <span>Replay</span>
         </button>
+
+        {/* Engine Switcher (TradingView Advanced Charts vs Standard) */}
+        {onToggleEngine && (
+          <button
+            onClick={onToggleEngine}
+            title={useOfficialTV ? "Switch to Standard Chart Engine" : "Switch to Official TradingView Advanced Charts Engine"}
+            className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
+              useOfficialTV
+                ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30'
+                : isDarkTheme ? 'bg-gray-800/80 text-gray-300 border-gray-700 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${useOfficialTV ? 'bg-blue-400 animate-pulse' : 'bg-gray-400'}`} />
+            <span>{useOfficialTV ? 'Official TradingView' : 'Standard Chart'}</span>
+          </button>
+        )}
 
         {/* Undo / Redo */}
         <div className="hidden 2xl:flex items-center gap-0.5 ml-1">
