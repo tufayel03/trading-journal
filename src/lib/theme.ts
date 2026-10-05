@@ -33,15 +33,15 @@ export const THEMES: Record<ThemeId, ThemeConfig> = {
     description: 'Flagship dark layout with gold & emerald highlights',
     isDark: true,
     previewColors: {
-      bg: '#0B0F19',
-      card: '#111827',
+      bg: '#08090D',
+      card: '#0F1117',
       accent: '#F59E0B'
     },
     variables: {
-      '--bg-canvas': '#0B0F19',
-      '--bg-card': '#111827',
-      '--bg-card-hover': '#1F2937',
-      '--border-color': '#1E293B',
+      '--bg-canvas': '#08090D',
+      '--bg-card': '#0F1117',
+      '--bg-card-hover': '#1A1D26',
+      '--border-color': '#1E222D',
       '--text-primary': '#F9FAFB',
       '--text-secondary': '#94A3B8',
       '--text-muted': '#64748B',
@@ -108,15 +108,15 @@ export const THEMES: Record<ThemeId, ThemeConfig> = {
     description: 'Ultra dark titanium theme with crisp monochrome & green metrics',
     isDark: true,
     previewColors: {
-      bg: '#121212',
-      card: '#1E1E1E',
+      bg: '#07080A',
+      card: '#0E1015',
       accent: '#10B981'
     },
     variables: {
-      '--bg-canvas': '#121212',
-      '--bg-card': '#1E1E1E',
-      '--bg-card-hover': '#2D2D2D',
-      '--border-color': '#2A2A2A',
+      '--bg-canvas': '#07080A',
+      '--bg-card': '#0E1015',
+      '--bg-card-hover': '#181A22',
+      '--border-color': '#1C1F28',
       '--text-primary': '#FFFFFF',
       '--text-secondary': '#A3A3A3',
       '--text-muted': '#737373',

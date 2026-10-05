@@ -862,12 +862,17 @@ export default function App() {
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
               <KPIOverview stats={kpiStats} />
-              <EquityCurveChart trades={filteredTrades} initialBalance={startingCapital} />
-              <CalendarHeatmap
-                trades={trades}
-                selectedDate={selectedCalendarDate}
-                onSelectDate={setSelectedCalendarDate}
-              />
+              
+              {/* Side-by-Side: Equity Curve & Trading Calendar */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+                <EquityCurveChart trades={filteredTrades} initialBalance={startingCapital} />
+                <CalendarHeatmap
+                  trades={trades}
+                  selectedDate={selectedCalendarDate}
+                  onSelectDate={setSelectedCalendarDate}
+                />
+              </div>
+
               <PairAndSessionCharts trades={filteredTrades} />
               <MistakeBreakdownChart trades={filteredTrades} />
               <StrategyBreakdown trades={filteredTrades} />

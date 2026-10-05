@@ -79,30 +79,30 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
   };
 
   return (
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 shadow-md mb-6">
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 shadow-md flex flex-col justify-between h-full">
       
       {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1F2937]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[var(--border-color)]">
         <div className="flex items-center gap-2">
           <CalendarIcon className="w-5 h-5 text-amber-400" />
           <div>
             <h3 className="text-base font-bold text-white">Performance Calendar Heatmap</h3>
-            <p className="text-xs text-gray-400">Daily P&L performance matrix. Click any day to view trade details.</p>
+            <p className="text-xs text-[var(--text-secondary)]">Daily P&L performance matrix. Click any day to view trade details.</p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="text-right hidden sm:block">
-            <span className="text-[10px] text-gray-400 uppercase tracking-wider block">Month P&L</span>
+            <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-wider block">Month P&L</span>
             <span className={`text-sm font-bold font-mono ${monthTotalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
               {monthTotalPnL >= 0 ? '+' : ''}${monthTotalPnL.toFixed(2)}
             </span>
           </div>
 
-          <div className="flex items-center gap-1 bg-[#0B0F19] p-1 rounded-lg border border-[#1F2937]">
+          <div className="flex items-center gap-1 bg-[var(--bg-canvas)] p-1 rounded-lg border border-[var(--border-color)]">
             <button
               onClick={prevMonth}
-              className="p-1 text-gray-400 hover:text-white rounded hover:bg-[#111827] transition-colors"
+              className="p-1 text-[var(--text-secondary)] hover:text-white rounded hover:bg-[var(--bg-card)] transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -113,7 +113,7 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
 
             <button
               onClick={nextMonth}
-              className="p-1 text-gray-400 hover:text-white rounded hover:bg-[#111827] transition-colors"
+              className="p-1 text-[var(--text-secondary)] hover:text-white rounded hover:bg-[var(--bg-card)] transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -121,7 +121,7 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
 
           <button
             onClick={todayMonth}
-            className="px-2.5 py-1 text-xs font-medium text-gray-300 bg-[#1F2937] hover:bg-[#374151] rounded-lg transition-colors"
+            className="px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] bg-[var(--bg-canvas)] hover:bg-[var(--bg-card-hover)] border border-[var(--border-color)] rounded-lg transition-colors"
           >
             Today
           </button>
@@ -139,7 +139,7 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
       </div>
 
       {/* Days of Week Header */}
-      <div className="grid grid-cols-7 gap-1.5 mb-2 text-center text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+      <div className="grid grid-cols-7 gap-1.5 mb-2 text-center text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider">
         <span>Sun</span>
         <span>Mon</span>
         <span>Tue</span>
@@ -150,10 +150,10 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
       </div>
 
       {/* Calendar Grid */}
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid grid-cols-7 gap-1.5 flex-1">
         {calendarDays.map((cell, idx) => {
           if (!cell) {
-            return <div key={`empty-${idx}`} className="h-20 bg-[#0B0F19]/40 rounded-lg border border-transparent" />;
+            return <div key={`empty-${idx}`} className="h-[68px] sm:h-[72px] bg-[var(--bg-canvas)]/30 rounded-lg border border-transparent" />;
           }
 
           const { dayNumber, dateStr, stats } = cell;
@@ -163,18 +163,18 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
           const isSelected = selectedDate === dateStr;
 
           // Color intensity calculation
-          let bgStyle = 'bg-[#0B0F19] border-[#1F2937] hover:border-gray-600';
+          let bgStyle = 'bg-[var(--bg-canvas)] border-[var(--border-color)] hover:border-[var(--accent-gold)]/50';
           if (hasTrades) {
             if (isProfitable) {
-              if (stats.netProfit > 1000) bgStyle = 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300';
+              if (stats.netProfit > 1000) bgStyle = 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300';
               else if (stats.netProfit > 300) bgStyle = 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300';
               else bgStyle = 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400';
             } else if (isLoss) {
-              if (Math.abs(stats.netProfit) > 1000) bgStyle = 'bg-rose-950/70 border-rose-500/50 text-rose-300';
+              if (Math.abs(stats.netProfit) > 1000) bgStyle = 'bg-rose-950/60 border-rose-500/40 text-rose-300';
               else if (Math.abs(stats.netProfit) > 300) bgStyle = 'bg-rose-950/40 border-rose-500/30 text-rose-300';
               else bgStyle = 'bg-rose-950/20 border-rose-500/20 text-rose-400';
             } else {
-              bgStyle = 'bg-gray-800/40 border-gray-700 text-gray-300';
+              bgStyle = 'bg-[var(--bg-canvas)] border-[var(--border-color)] text-gray-300';
             }
           }
 
@@ -186,12 +186,12 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
             <div
               key={dateStr}
               onClick={() => hasTrades && onSelectDate(isSelected ? null : dateStr)}
-              className={`h-20 rounded-lg border p-1.5 flex flex-col justify-between transition-all cursor-pointer ${bgStyle}`}
+              className={`h-[68px] sm:h-[72px] rounded-lg border p-1.5 flex flex-col justify-between transition-all cursor-pointer ${bgStyle}`}
             >
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-gray-300">{dayNumber}</span>
                 {hasTrades && (
-                  <span className="text-[9px] font-semibold px-1 rounded bg-black/40 text-gray-300">
+                  <span className="text-[9px] font-semibold px-1 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)]">
                     {stats.tradesCount}T
                   </span>
                 )}
@@ -202,7 +202,7 @@ export const CalendarHeatmap: React.FC<CalendarHeatmapProps> = ({
                   <div className="text-xs font-bold font-mono">
                     {isProfitable ? '+' : ''}${stats.netProfit.toFixed(0)}
                   </div>
-                  <div className="text-[9px] font-mono text-gray-400 opacity-80">
+                  <div className="text-[9px] font-mono text-[var(--text-secondary)] opacity-80">
                     {stats.winsCount}W-{stats.lossesCount}L
                   </div>
                 </div>

@@ -60,25 +60,25 @@ export const EquityCurveChart: React.FC<EquityCurveChartProps> = ({ trades, init
   const isPositive = totalReturn >= 0;
 
   return (
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 shadow-md mb-6">
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 shadow-md flex flex-col justify-between h-full">
       
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-[#1F2937]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-[var(--border-color)]">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-emerald-400" />
           <div>
             <h3 className="text-base font-bold text-white">Account Equity Curve</h3>
-            <p className="text-xs text-gray-400">Cumulative balance growth over chronologically executed trades</p>
+            <p className="text-xs text-[var(--text-secondary)]">Cumulative balance growth over chronologically executed trades</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4 text-xs font-mono">
           <div>
-            <span className="text-gray-400">Start: </span>
+            <span className="text-[var(--text-secondary)]">Start: </span>
             <span className="text-gray-200 font-semibold">${initialBalance.toLocaleString()}</span>
           </div>
-          <div className="h-4 w-px bg-gray-800" />
+          <div className="h-4 w-px bg-[var(--border-color)]" />
           <div>
-            <span className="text-gray-400">Current: </span>
+            <span className="text-[var(--text-secondary)]">Current: </span>
             <span className={`font-bold ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
               ${currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
@@ -86,7 +86,7 @@ export const EquityCurveChart: React.FC<EquityCurveChartProps> = ({ trades, init
         </div>
       </div>
 
-      <div className="h-72 w-full">
+      <div className="flex-1 min-h-[300px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
@@ -100,14 +100,14 @@ export const EquityCurveChart: React.FC<EquityCurveChartProps> = ({ trades, init
               </linearGradient>
             </defs>
 
-            <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.6} vertical={false} />
             
             <XAxis 
               dataKey="date" 
               stroke="#6B7280" 
               fontSize={11} 
               tickLine={false}
-              axisLine={{ stroke: '#1F2937' }}
+              axisLine={{ stroke: 'var(--border-color)' }}
             />
             
             <YAxis 
@@ -116,7 +116,7 @@ export const EquityCurveChart: React.FC<EquityCurveChartProps> = ({ trades, init
               fontSize={11} 
               tickFormatter={(val) => `$${val.toLocaleString()}`}
               tickLine={false}
-              axisLine={{ stroke: '#1F2937' }}
+              axisLine={{ stroke: 'var(--border-color)' }}
             />
 
             <Tooltip content={<CustomTooltip />} />
@@ -150,10 +150,10 @@ const CustomTooltip = ({ active, payload }: any) => {
     const isWin = data.pnl >= 0;
 
     return (
-      <div className="bg-[#0B0F19] border border-[#374151] rounded-lg p-3 shadow-xl text-xs space-y-1 z-50">
-        <div className="font-bold text-white flex items-center justify-between gap-3 border-b border-gray-800 pb-1">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-3 shadow-xl text-xs space-y-1 z-50">
+        <div className="font-bold text-white flex items-center justify-between gap-3 border-b border-[var(--border-color)] pb-1">
           <span>Trade #{data.tradeIndex || 0}</span>
-          <span className="text-gray-400">{data.date}</span>
+          <span className="text-[var(--text-secondary)]">{data.date}</span>
         </div>
         {data.symbol && (
           <div className="flex justify-between gap-4 text-gray-300">
@@ -162,13 +162,13 @@ const CustomTooltip = ({ active, payload }: any) => {
           </div>
         )}
         <div className="flex justify-between gap-4">
-          <span className="text-gray-400">Trade P&L:</span>
+          <span className="text-[var(--text-secondary)]">Trade P&L:</span>
           <span className={`font-mono font-bold ${isWin ? 'text-emerald-400' : 'text-rose-400'}`}>
             {isWin ? '+' : ''}${data.pnl?.toFixed(2)}
           </span>
         </div>
         <div className="flex justify-between gap-4">
-          <span className="text-gray-400">Account Balance:</span>
+          <span className="text-[var(--text-secondary)]">Account Balance:</span>
           <span className="font-mono font-bold text-white">${data.balance?.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
         </div>
       </div>

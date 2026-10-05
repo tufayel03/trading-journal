@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Play, 
   Flame, 
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Trade } from '../../types';
 import { TradeReplayModal } from './TradeReplayModal';
+import { Pagination } from '../Common/Pagination';
 
 interface Props {
   trades: Trade[];
@@ -59,6 +60,17 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
     });
   }, [trades, symbolFilter, outcomeFilter, searchQuery]);
 
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(12);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [symbolFilter, outcomeFilter, searchQuery, trades.length]);
+
+  const isAll = pageSize >= filteredTrades.length || pageSize >= 999999;
+  const totalPages = Math.max(1, Math.ceil(filteredTrades.length / (isAll ? filteredTrades.length || 1 : pageSize)));
+  const paginatedTrades = isAll ? filteredTrades : filteredTrades.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
   const handleLaunchReplay = (trade: Trade) => {
     setSelectedTrade(trade);
     setIsReplayModalOpen(true);
@@ -68,7 +80,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
     <div className="space-y-6 animate-fadeIn">
       
       {/* Top Hero Banner */}
-      <div className="bg-[#111827] border border-emerald-500/30 rounded-2xl p-6 shadow-2xl bg-gradient-to-r from-[#111827] via-emerald-950/20 to-[#111827] flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-[var(--bg-card)] border border-emerald-500/30 rounded-2xl p-6 shadow-2xl bg-gradient-to-r from-[var(--bg-card)] via-emerald-950/20 to-[var(--bg-card)] flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-lg shadow-emerald-500/30 text-black shrink-0">
             <Video className="w-7 h-7 stroke-[2.5]" />
@@ -101,7 +113,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-md">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-3 shadow-md">
         
         {/* Search */}
         <div className="relative w-full md:w-72">
@@ -111,7 +123,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search symbol, ticket, notes..."
-            className="w-full bg-[#0B0F19] border border-[#1F2937] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+            className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
           />
         </div>
 
@@ -122,7 +134,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
           <select
             value={symbolFilter}
             onChange={(e) => setSymbolFilter(e.target.value)}
-            className="bg-[#0B0F19] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-gray-300 font-semibold focus:outline-none focus:border-emerald-500"
+            className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-xs text-gray-300 font-semibold focus:outline-none focus:border-emerald-500"
           >
             <option value="ALL">All Symbols</option>
             {uniqueSymbols.map(s => (
@@ -134,7 +146,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
           <select
             value={outcomeFilter}
             onChange={(e) => setOutcomeFilter(e.target.value as any)}
-            className="bg-[#0B0F19] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-gray-300 font-semibold focus:outline-none focus:border-emerald-500"
+            className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-xs text-gray-300 font-semibold focus:outline-none focus:border-emerald-500"
           >
             <option value="ALL">All Outcomes</option>
             <option value="WIN">Wins Only</option>
@@ -142,8 +154,26 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
             <option value="BREAK_EVEN">Breakeven Only</option>
           </select>
 
-          <span className="text-xs text-gray-400 font-mono ml-auto md:ml-2">
-            {filteredTrades.length} Trades Ready to Replay
+          {/* Top Compact Pagination */}
+          {filteredTrades.length > 0 && (
+            <Pagination
+              variant="compact"
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredTrades.length}
+              pageSize={pageSize}
+              pageSizeOptions={[12, 24, 48, 96, 'ALL']}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              itemName="trades"
+            />
+          )}
+
+          <span className="text-xs text-gray-400 font-mono hidden xl:inline">
+            {filteredTrades.length} Trades Ready
           </span>
 
         </div>
@@ -152,7 +182,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
 
       {/* Trades Grid for Replay Selection */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredTrades.map((t) => {
+        {paginatedTrades.map((t) => {
           const isWin = t.netProfit > 0;
           const isLoss = t.netProfit < 0;
           const isCent = t.isCent || t.accountCurrency === 'USC';
@@ -170,7 +200,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
             <div
               key={t.id}
               onClick={() => handleLaunchReplay(t)}
-              className="group bg-[#111827] border border-[#1F2937] hover:border-emerald-500/50 rounded-xl p-4 shadow-md hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between space-y-3 relative overflow-hidden"
+              className="group bg-[var(--bg-card)] border border-[var(--border-color)] hover:border-emerald-500/50 rounded-xl p-4 shadow-md hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between space-y-3 relative overflow-hidden"
             >
               {/* Glow Accent */}
               <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-10 pointer-events-none ${
@@ -234,7 +264,7 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
               </div>
 
               {/* Card Footer: Replay Button */}
-              <div className="border-t border-[#1F2937] pt-3 flex items-center justify-between">
+              <div className="border-t border-[var(--border-color)] pt-3 flex items-center justify-between">
                 <span className="text-[11px] text-gray-500 font-mono">
                   {t.session} Session
                 </span>
@@ -249,6 +279,22 @@ export const TradeReplayView: React.FC<Props> = ({ trades }) => {
           );
         })}
       </div>
+
+      {/* Pagination Controls */}
+      <Pagination
+        variant="full"
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalItems={filteredTrades.length}
+        pageSize={pageSize}
+        pageSizeOptions={[12, 24, 48, 96, 'ALL']}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(newSize) => {
+          setPageSize(newSize);
+          setCurrentPage(1);
+        }}
+        itemName="trades"
+      />
 
       {/* Trade Replay Modal */}
       <TradeReplayModal

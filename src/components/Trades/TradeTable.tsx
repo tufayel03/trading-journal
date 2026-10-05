@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Flame, 
   ArrowUpRight, 
@@ -20,6 +20,7 @@ import {
   Video
 } from 'lucide-react';
 import { Trade, OpenPosition } from '../../types';
+import { Pagination } from '../Common/Pagination';
 
 interface TradeTableProps {
   trades: Trade[];
@@ -54,21 +55,6 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   const [sortField, setSortField] = useState<'closeTime' | 'netProfit' | 'rMultiple' | 'pips'>('closeTime');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === trades.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(trades.map(t => t.id)));
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-  };
-
   const handleSort = (field: 'closeTime' | 'netProfit' | 'rMultiple' | 'pips') => {
     if (sortField === field) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
@@ -92,6 +78,46 @@ export const TradeTable: React.FC<TradeTableProps> = ({
     return 0;
   });
 
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [trades.length, sortField, sortDirection]);
+
+  // Selection logic: page vs all
+  const isAll = pageSize >= sortedTrades.length || pageSize >= 999999;
+  const totalPages = Math.max(1, Math.ceil(sortedTrades.length / (isAll ? sortedTrades.length || 1 : pageSize)));
+  const paginatedTrades = isAll ? sortedTrades : sortedTrades.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const allCurrentPageSelected = paginatedTrades.length > 0 && paginatedTrades.every(t => selectedIds.has(t.id));
+  const someCurrentPageSelected = paginatedTrades.some(t => selectedIds.has(t.id));
+
+  const toggleSelectPage = () => {
+    const next = new Set(selectedIds);
+    if (allCurrentPageSelected) {
+      paginatedTrades.forEach(t => next.delete(t.id));
+    } else {
+      paginatedTrades.forEach(t => next.add(t.id));
+    }
+    setSelectedIds(next);
+  };
+
+  const selectAllTrades = () => {
+    setSelectedIds(new Set(trades.map(t => t.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
   const selectedTradesList = trades.filter(t => selectedIds.has(t.id));
 
   return (
@@ -99,8 +125,8 @@ export const TradeTable: React.FC<TradeTableProps> = ({
       
       {/* 1. LIVE ACTIVE POSITIONS SECTION (When MT5 positions are open) */}
       {openPositions && openPositions.length > 0 && (
-        <div className="bg-[#111827] border border-emerald-500/30 rounded-xl p-5 shadow-lg relative overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1F2937]">
+        <div className="bg-[var(--bg-card)] border border-emerald-500/30 rounded-xl p-5 shadow-lg relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[var(--border-color)]">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
               <Activity className="w-5 h-5 text-emerald-400" />
@@ -211,11 +237,11 @@ export const TradeTable: React.FC<TradeTableProps> = ({
       )}
 
       {/* 2. HISTORICAL CLOSED TRADES LOG */}
-      <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 shadow-md">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 shadow-md">
         
         {/* Table Header Controls */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1F2937]">
-          <div className="flex items-center gap-2.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pb-3 border-b border-[var(--border-color)]">
+          <div className="flex items-center gap-2.5 flex-wrap">
             <Layers className="w-5 h-5 text-emerald-400" />
             <h3 className="text-base font-bold text-white">Closed Trades History ({trades.length})</h3>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 flex items-center gap-1" title="Exness History Protection: All synced trades are permanently preserved in your local vault">
@@ -224,9 +250,28 @@ export const TradeTable: React.FC<TradeTableProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 flex-wrap justify-between lg:justify-end">
+            {/* Top Compact Pagination */}
+            {sortedTrades.length > 0 && (
+              <Pagination
+                variant="compact"
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={sortedTrades.length}
+                pageSize={pageSize}
+                pageSizeOptions={[10, 25, 50, 100, 'ALL']}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                itemName="trades"
+              />
+            )}
+
+            {/* Actions: Export / Delete / Clear */}
             {selectedIds.size > 0 ? (
-              <>
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => onExportSelected(selectedTradesList)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow transition-colors"
@@ -247,7 +292,14 @@ export const TradeTable: React.FC<TradeTableProps> = ({
                   <Trash2 className="w-3.5 h-3.5" />
                   Delete ({selectedIds.size})
                 </button>
-              </>
+
+                <button
+                  onClick={clearSelection}
+                  className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded"
+                >
+                  Clear Selection
+                </button>
+              </div>
             ) : (
               trades.length > 0 && onClearAllTrades && (
                 <button
@@ -262,6 +314,21 @@ export const TradeTable: React.FC<TradeTableProps> = ({
           </div>
         </div>
 
+        {/* Selection Banner if partial selection */}
+        {selectedIds.size > 0 && selectedIds.size < trades.length && (
+          <div className="mb-3 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between text-xs text-emerald-300">
+            <span>
+              <strong>{selectedIds.size}</strong> trade{selectedIds.size === 1 ? '' : 's'} selected on this page.
+            </span>
+            <button
+              onClick={selectAllTrades}
+              className="text-emerald-400 hover:text-emerald-300 font-bold underline"
+            >
+              Select all {trades.length} trades in journal
+            </button>
+          </div>
+        )}
+
         {/* Table Element */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -270,9 +337,13 @@ export const TradeTable: React.FC<TradeTableProps> = ({
                 <th className="pb-3 pl-2 w-8">
                   <input
                     type="checkbox"
-                    checked={trades.length > 0 && selectedIds.size === trades.length}
-                    onChange={toggleSelectAll}
-                    className="rounded bg-[#0B0F19] border-gray-700 text-emerald-500 focus:ring-0"
+                    checked={allCurrentPageSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someCurrentPageSelected && !allCurrentPageSelected;
+                    }}
+                    onChange={toggleSelectPage}
+                    className="rounded bg-[var(--bg-canvas)] border-gray-700 text-emerald-500 focus:ring-0 cursor-pointer"
+                    title="Select all on this page"
                   />
                 </th>
                 <th 
@@ -322,12 +393,12 @@ export const TradeTable: React.FC<TradeTableProps> = ({
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-[#1F2937]">
+            <tbody className="divide-y divide-[var(--border-color)]">
               {sortedTrades.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="py-14 text-center">
                     <div className="max-w-md mx-auto space-y-4">
-                      <div className="w-12 h-12 rounded-full bg-[#1F2937] flex items-center justify-center mx-auto text-gray-400">
+                      <div className="w-12 h-12 rounded-full bg-[var(--bg-canvas)] border border-[var(--border-color)] flex items-center justify-center mx-auto text-gray-400">
                         <Layers className="w-6 h-6 text-gray-500" />
                       </div>
                       <div>
@@ -369,7 +440,7 @@ export const TradeTable: React.FC<TradeTableProps> = ({
                   </td>
                 </tr>
               ) : (
-                sortedTrades.map((t) => {
+                paginatedTrades.map((t) => {
                   const isWin = t.netProfit > 0;
                   const isLoss = t.netProfit < 0;
                   const isSelected = selectedIds.has(t.id);
@@ -383,14 +454,14 @@ export const TradeTable: React.FC<TradeTableProps> = ({
                   return (
                     <tr 
                       key={t.id} 
-                      className={`hover:bg-[#0B0F19] transition-colors ${isSelected ? 'bg-emerald-950/20' : ''}`}
+                      className={`hover:bg-[var(--bg-canvas)] transition-colors ${isSelected ? 'bg-emerald-950/20' : ''}`}
                     >
                       <td className="py-3 pl-2">
                         <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggleSelect(t.id)}
-                          className="rounded bg-[#0B0F19] border-gray-700 text-emerald-500 focus:ring-0"
+                          className="rounded bg-[var(--bg-canvas)] border-gray-700 text-emerald-500 focus:ring-0"
                         />
                       </td>
 
@@ -572,6 +643,22 @@ export const TradeTable: React.FC<TradeTableProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        <Pagination
+          variant="full"
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={sortedTrades.length}
+          pageSize={pageSize}
+          pageSizeOptions={[10, 25, 50, 100, 'ALL']}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+          itemName="trades"
+        />
 
       </div>
     </div>

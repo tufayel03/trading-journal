@@ -16,14 +16,14 @@ export const MistakeBreakdownChart: React.FC<MistakeBreakdownChartProps> = ({ tr
   }, [mistakesList]);
 
   return (
-    <div className="bg-[#111827] border border-[#1F2937] rounded-xl p-5 shadow-md mb-6">
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 shadow-md mb-6">
       
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#1F2937]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[var(--border-color)]">
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 text-rose-400" />
           <div>
             <h3 className="text-base font-bold text-white">Cost of Mistakes Breakdown</h3>
-            <p className="text-xs text-gray-400">Quantified dollar losses attributed to psychological & execution errors</p>
+            <p className="text-xs text-[var(--text-secondary)]">Quantified dollar losses attributed to psychological & execution errors</p>
           </div>
         </div>
 
@@ -34,7 +34,7 @@ export const MistakeBreakdownChart: React.FC<MistakeBreakdownChartProps> = ({ tr
       </div>
 
       {mistakesList.length === 0 ? (
-        <div className="py-12 text-center text-gray-500 text-xs">
+        <div className="py-12 text-center text-[var(--text-muted)] text-xs">
           <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-2 opacity-60" />
           No execution mistakes recorded in filtered trades. Pristine discipline!
         </div>
@@ -45,7 +45,7 @@ export const MistakeBreakdownChart: React.FC<MistakeBreakdownChartProps> = ({ tr
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={mistakesList} layout="vertical" margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.6} horizontal={false} />
                 <XAxis type="number" stroke="#6B7280" fontSize={10} tickFormatter={(val) => `$${val}`} />
                 <YAxis dataKey="mistake" type="category" stroke="#9CA3AF" fontSize={11} width={120} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
@@ -63,15 +63,15 @@ export const MistakeBreakdownChart: React.FC<MistakeBreakdownChartProps> = ({ tr
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="text-gray-400 border-b border-[#1F2937] text-[10px] uppercase">
+                  <tr className="text-[var(--text-secondary)] border-b border-[var(--border-color)] text-[10px] uppercase">
                     <th className="pb-2">Mistake Type</th>
                     <th className="pb-2 text-center">Frequency</th>
                     <th className="pb-2 text-right">Total Loss ($)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1F2937]">
+                <tbody className="divide-y divide-[var(--border-color)]">
                   {mistakesList.map((m) => (
-                    <tr key={m.mistake} className="hover:bg-[#0B0F19]">
+                    <tr key={m.mistake} className="hover:bg-[var(--bg-canvas)]">
                       <td className="py-2.5 font-medium text-white flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-rose-500" />
                         {m.mistake}
@@ -87,7 +87,7 @@ export const MistakeBreakdownChart: React.FC<MistakeBreakdownChartProps> = ({ tr
             </div>
 
             {/* Savings Callout */}
-            <div className="bg-[#0B0F19] border border-amber-500/20 rounded-lg p-3 text-xs text-gray-300 flex items-start gap-2.5">
+            <div className="bg-[var(--bg-canvas)] border border-amber-500/20 rounded-lg p-3 text-xs text-gray-300 flex items-start gap-2.5">
               <TrendingUp className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold text-amber-400">Psychology Insight:</span> By eliminating these execution mistakes, you would immediately save <span className="text-emerald-400 font-bold font-mono">+${totalMistakeLoss.toFixed(2)}</span> in drawdown capital!
@@ -106,12 +106,12 @@ const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-[#0B0F19] border border-rose-500/30 rounded-lg p-2.5 shadow-xl text-xs space-y-1">
+      <div className="bg-[var(--bg-card)] border border-rose-500/30 rounded-lg p-2.5 shadow-xl text-xs space-y-1">
         <div className="font-bold text-white">{data.mistake}</div>
         <div className="text-rose-400 font-mono font-bold">
           Total Loss: -${data.totalLoss.toFixed(2)}
         </div>
-        <div className="text-gray-400">Occurrences: {data.count} trades</div>
+        <div className="text-[var(--text-secondary)]">Occurrences: {data.count} trades</div>
       </div>
     );
   }

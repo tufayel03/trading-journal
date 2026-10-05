@@ -2,10 +2,10 @@
 
 @layer base {
   :root {
-    --bg-canvas: #0B0F19;
-    --bg-card: #111827;
-    --bg-card-hover: #1F2937;
-    --border-color: #1E293B;
+    --bg-canvas: #08090D;
+    --bg-card: #0F1117;
+    --bg-card-hover: #1A1D26;
+    --border-color: #1E222D;
     --text-primary: #F9FAFB;
     --text-secondary: #94A3B8;
     --text-muted: #64748B;
