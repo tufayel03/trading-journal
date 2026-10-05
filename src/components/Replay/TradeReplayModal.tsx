@@ -33,6 +33,9 @@ import { TradingViewTopBar } from './TradingViewTopBar';
 import { TradingViewReplayBar } from './TradingViewReplayBar';
 import { TradingViewRightDock } from './TradingViewRightDock';
 import { OfficialTradingViewChart, OfficialTradingViewChartRef } from './OfficialTradingViewChart';
+import { KLineReplayChart } from './KLineReplayChart';
+
+type ChartEngine = 'kline' | 'standard' | 'official_tv';
 
 interface Props {
   isOpen: boolean;
@@ -63,16 +66,22 @@ export const TradeReplayModal: React.FC<Props> = ({
   const [isGoToOpen, setIsGoToOpen] = useState<boolean>(false);
   const [theme, setTheme] = useState<ChartTheme>('dark'); // Default to authentic TradingView Dark theme
   const [rightDockTab, setRightDockTab] = useState<'details' | 'notes' | 'drawings' | null>(null);
-  const [useOfficialTV, setUseOfficialTV] = useState<boolean>(() => {
-    return localStorage.getItem('replay_chart_engine') === 'official_tv';
+  
+  const [chartEngine, setChartEngine] = useState<ChartEngine>(() => {
+    const saved = localStorage.getItem('replay_chart_engine') as ChartEngine | null;
+    if (saved === 'standard' || saved === 'official_tv' || saved === 'kline') return saved;
+    return 'kline'; // Default to KLineChart Pro!
   });
 
   const officialTvRef = useRef<OfficialTradingViewChartRef>(null);
 
-  const handleToggleEngine = () => {
-    setUseOfficialTV(prev => {
-      const next = !prev;
-      localStorage.setItem('replay_chart_engine', next ? 'official_tv' : 'standard');
+  const handleCycleEngine = () => {
+    setChartEngine(prev => {
+      let next: ChartEngine = 'kline';
+      if (prev === 'kline') next = 'standard';
+      else if (prev === 'standard') next = 'official_tv';
+      else if (prev === 'official_tv') next = 'kline';
+      localStorage.setItem('replay_chart_engine', next);
       return next;
     });
   };
@@ -396,8 +405,8 @@ export const TradeReplayModal: React.FC<Props> = ({
         onSelectTrade={onSelectTrade}
         onRefreshCandles={() => loadCandles(true)}
         isSyncingCandles={isSyncingMT5}
-        useOfficialTV={useOfficialTV}
-        onToggleEngine={handleToggleEngine}
+        chartEngine={chartEngine}
+        onCycleEngine={handleCycleEngine}
       />
 
       {/* MAIN BODY: Chart Canvas + Right Drawer */}
@@ -406,14 +415,24 @@ export const TradeReplayModal: React.FC<Props> = ({
           {/* Replay Chart Container */}
           <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden relative">
             
-            {useOfficialTV ? (
+            {chartEngine === 'kline' ? (
+              <div className="flex-1 min-h-0 w-full relative">
+                <KLineReplayChart
+                  trade={trade}
+                  timeframe={timeframe}
+                  theme={theme === 'dark' ? 'dark' : 'light'}
+                  currentIndex={currentIndex}
+                  onTimeframeChange={setTimeframe}
+                />
+              </div>
+            ) : chartEngine === 'official_tv' ? (
               <div className="flex-1 min-h-0 w-full relative">
                 <OfficialTradingViewChart
                   ref={officialTvRef}
                   trade={trade}
                   timeframe={timeframe}
                   isDarkTheme={theme === 'dark'}
-                  onFallbackRequested={handleToggleEngine}
+                  onFallbackRequested={() => setChartEngine('kline')}
                 />
               </div>
             ) : isLoading ? (

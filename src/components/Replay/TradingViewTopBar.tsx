@@ -42,8 +42,8 @@ interface Props {
   onSelectTrade?: (trade: Trade) => void;
   onRefreshCandles?: () => void;
   isSyncingCandles?: boolean;
-  useOfficialTV?: boolean;
-  onToggleEngine?: () => void;
+  chartEngine?: 'kline' | 'standard' | 'official_tv';
+  onCycleEngine?: () => void;
 }
 
 export const TradingViewTopBar: React.FC<Props> = ({
@@ -61,8 +61,8 @@ export const TradingViewTopBar: React.FC<Props> = ({
   onSelectTrade,
   onRefreshCandles,
   isSyncingCandles = false,
-  useOfficialTV = false,
-  onToggleEngine
+  chartEngine = 'kline',
+  onCycleEngine
 }) => {
   const [showIndicatorsModal, setShowIndicatorsModal] = useState(false);
   const [chartStyle, setChartStyle] = useState<'candles' | 'bars' | 'line'>('candles');
@@ -198,19 +198,25 @@ export const TradingViewTopBar: React.FC<Props> = ({
           <span>Replay</span>
         </button>
 
-        {/* Engine Switcher (TradingView Advanced Charts vs Standard) */}
-        {onToggleEngine && (
+        {/* Engine Switcher (KLine Pro Zero-Lag Canvas / Standard / Official TV) */}
+        {onCycleEngine && (
           <button
-            onClick={onToggleEngine}
-            title={useOfficialTV ? "Switch to Standard Chart Engine" : "Switch to Official TradingView Advanced Charts Engine"}
+            onClick={onCycleEngine}
+            title="Switch Chart Engine (KLineChart Pro Zero-Lag Canvas / Standard / Official TV)"
             className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
-              useOfficialTV
+              chartEngine === 'kline'
+                ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
+                : chartEngine === 'official_tv'
                 ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30'
                 : isDarkTheme ? 'bg-gray-800/80 text-gray-300 border-gray-700 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
             }`}
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${useOfficialTV ? 'bg-blue-400 animate-pulse' : 'bg-gray-400'}`} />
-            <span>{useOfficialTV ? 'Official TradingView' : 'Standard Chart'}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              chartEngine === 'kline' ? 'bg-emerald-400 animate-pulse' : chartEngine === 'official_tv' ? 'bg-blue-400' : 'bg-gray-400'
+            }`} />
+            <span>
+              {chartEngine === 'kline' ? 'KLine Pro (Zero-Lag)' : chartEngine === 'official_tv' ? 'Official TradingView' : 'Standard Chart'}
+            </span>
           </button>
         )}
 
