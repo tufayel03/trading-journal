@@ -28,8 +28,10 @@ import {
 } from 'lucide-react';
 import { Trade } from '../../types';
 import { TradingViewReplayChart, Candle, TradingViewReplayChartRef, ChartTheme, getSymbolPrecision } from './TradingViewReplayChart';
-import { ReplayControls } from './ReplayControls';
 import { TradingViewGoToModal } from './TradingViewGoToModal';
+import { TradingViewTopBar } from './TradingViewTopBar';
+import { TradingViewReplayBar } from './TradingViewReplayBar';
+import { TradingViewRightDock } from './TradingViewRightDock';
 
 interface Props {
   isOpen: boolean;
@@ -58,7 +60,8 @@ export const TradeReplayModal: React.FC<Props> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSyncingMT5, setIsSyncingMT5] = useState<boolean>(false);
   const [isGoToOpen, setIsGoToOpen] = useState<boolean>(false);
-  const [theme, setTheme] = useState<ChartTheme>('light'); // Default to pristine TradingView White theme
+  const [theme, setTheme] = useState<ChartTheme>('dark'); // Default to authentic TradingView Dark theme
+  const [rightDockTab, setRightDockTab] = useState<'details' | 'notes' | 'drawings' | null>(null);
 
   const precision = getSymbolPrecision(trade.symbol);
 
@@ -343,192 +346,42 @@ export const TradeReplayModal: React.FC<Props> = ({
   const isCent = trade.isCent || trade.accountCurrency === 'USC';
   const displayProfit = isCent ? trade.netProfit * 100 : trade.netProfit;
 
+  const handleFullscreenToggle = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  };
+
   const content = (
-    <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-full h-full bg-[#0B0F19] text-[#F9FAFB] flex flex-col overflow-hidden select-none z-[99999] font-sans">
-      {/* TOP BAR: Header, Quotes, Timeframes, Indicators, Controls */}
-      <header className="h-13 bg-[#111827] border-b border-[#1F2937] px-4 py-2 flex items-center justify-between gap-3 shrink-0 z-20">
-        
-        {/* Left: Back Button, Trade Symbol, Direction & Navigation */}
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0B0F19] hover:bg-[#1F2937] text-gray-300 hover:text-white rounded-lg border border-[#1F2937] text-xs font-bold transition-all shadow-sm"
-            title="Return to Journal"
-          >
-            <ChevronLeft className="w-4 h-4 text-emerald-400" />
-            <span>Back</span>
-          </button>
-
-          <div className="flex items-center gap-2 border-l border-[#1F2937] pl-3">
-            <span className="font-extrabold text-sm text-white tracking-wider font-mono flex items-center gap-1">
-              {trade.symbol === 'XAUUSD' && <Flame className="w-4 h-4 text-amber-400 fill-amber-400" />}
-              {trade.symbol}
-            </span>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-              isBuy ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-            }`}>
-              {trade.direction} {trade.lotSize}L
-            </span>
-            {trade.ticket && (
-              <span className="text-[10px] text-gray-400 font-mono hidden md:inline">
-                #{trade.ticket}
-              </span>
-            )}
-          </div>
-
-          {/* Previous / Next Trade Switcher */}
-          {allTrades.length > 1 && onSelectTrade && (
-            <div className="hidden sm:flex items-center gap-1 border-l border-[#1F2937] pl-3">
-              <button
-                onClick={() => prevTrade && onSelectTrade(prevTrade)}
-                disabled={!prevTrade}
-                title="Previous Trade"
-                className="p-1 text-gray-400 hover:text-white disabled:opacity-20 hover:bg-[#1F2937] rounded transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-[10px] text-gray-500 font-mono">
-                {currentTradeIndex + 1}/{allTrades.length}
-              </span>
-              <button
-                onClick={() => nextTrade && onSelectTrade(nextTrade)}
-                disabled={!nextTrade}
-                title="Next Trade"
-                className="p-1 text-gray-400 hover:text-white disabled:opacity-20 hover:bg-[#1F2937] rounded transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Center: Live Hover Quote / Timeframe Selector */}
-        <div className="flex items-center gap-3 shrink-0">
-          {/* Timeframe Selector Tabs (1m, 5m, 15m, 30m, 1h, 4h, 1D, 1W, 1M) */}
-          <div className="flex items-center bg-[#0B0F19] p-0.5 rounded-lg border border-[#1F2937]">
-            {timeframes.map(tf => (
-              <button
-                key={tf.value}
-                onClick={() => {
-                  if (timeframe === tf.value) return;
-                  if (candles[currentIndex]) {
-                    activeReplayTimestampRef.current = candles[currentIndex].time;
-                    activeReplayPriceRef.current = candles[currentIndex].close;
-                  }
-                  setTimeframe(tf.value);
-                }}
-                className={`px-2 py-1 rounded text-xs font-bold transition-all ${
-                  timeframe === tf.value
-                    ? 'bg-emerald-500 text-black shadow-md font-mono'
-                    : 'text-gray-400 hover:text-white hover:bg-[#1F2937] font-mono'
-                }`}
-              >
-                {tf.label}
-              </button>
-            ))}
-          </div>
-
-          {/* TradingView "Go to..." Button */}
-          <button
-            onClick={() => setIsGoToOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B0F19] hover:bg-[#1F2937] border border-[#1F2937] text-cyan-400 hover:text-cyan-300 text-xs font-bold transition-all"
-            title="Go to Date & Time (Alt+G)"
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Go to</span>
-          </button>
-
-          {/* Live Crosshair Quote readout with exact 5-digit precision */}
-          {hoveredCandle && (
-            <div className="hidden 2xl:flex items-center gap-2 text-[11px] font-mono bg-[#0B0F19] px-3 py-1 rounded border border-[#1F2937]">
-              <span className="text-gray-400">{hoveredCandle.time}</span>
-              <span className="text-gray-300">O: <strong className="text-white">{hoveredCandle.open}</strong></span>
-              <span className="text-gray-300">H: <strong className="text-emerald-400">{hoveredCandle.high}</strong></span>
-              <span className="text-gray-300">L: <strong className="text-rose-400">{hoveredCandle.low}</strong></span>
-              <span className="text-gray-300">C: <strong className="text-cyan-400">{hoveredCandle.close}</strong></span>
-            </div>
-          )}
-        </div>
-
-        {/* Right: Theme Toggle, MT5 Status Badge, Drawer Toggle, Close */}
-        <div className="flex items-center gap-2 shrink-0">
-          
-          {/* Chart Theme Selector (TradingView Light vs Dark vs MT5 Classic) */}
-          <div className="flex items-center bg-[#0B0F19] p-0.5 rounded-lg border border-[#1F2937]">
-            <button
-              onClick={() => setTheme('light')}
-              className={`px-2 py-1 rounded text-xs font-bold transition-all ${
-                theme === 'light'
-                  ? 'bg-white text-gray-900 shadow-md font-medium'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-              title="TradingView Clean White (Default)"
-            >
-              <Sun className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setTheme('mt5')}
-              className={`px-2 py-1 rounded text-xs font-bold transition-all ${
-                theme === 'mt5'
-                  ? 'bg-blue-600 text-white shadow-md font-medium'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-              title="MT5 Classic Candlestick Theme (White Bull / Solid Black Bear)"
-            >
-              <span className="font-mono text-[10px] font-bold">MT5</span>
-            </button>
-            <button
-              onClick={() => setTheme('dark')}
-              className={`px-2 py-1 rounded text-xs font-bold transition-all ${
-                theme === 'dark'
-                  ? 'bg-[#1F2937] text-white shadow-md font-medium'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-              title="TradingView Dark Slate"
-            >
-              <Moon className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Exness MT5 Real Data Feed Badge & Manual Refresh */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-mono">Exness MT5 Real Feed</span>
-            <button
-              onClick={() => loadCandles(true)}
-              disabled={isSyncingMT5 || isLoading}
-              className="p-0.5 hover:text-white transition-colors disabled:opacity-40 ml-1"
-              title="Re-sync authentic candles directly from Exness MT5"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingMT5 ? 'animate-spin text-emerald-300' : ''}`} />
-            </button>
-          </div>
-
-          {/* Toggle Trade Journal Details Panel */}
-          <button
-            onClick={() => setShowRightDrawer(!showRightDrawer)}
-            className={`p-1.5 rounded-lg border transition-colors ${
-              showRightDrawer
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-[#0B0F19] border-[#1F2937] text-gray-400 hover:text-white'
-            }`}
-            title={showRightDrawer ? "Hide Trade Details" : "Show Trade Details"}
-          >
-            <BookOpen className="w-4 h-4" />
-          </button>
-
-          {/* Close Modal */}
-          <button
-            onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors ml-1"
-            title="Close Replay (Esc)"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
-        </div>
-
-      </header>
+    <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-full h-full bg-[#131722] text-[#D1D4DC] flex flex-col overflow-hidden select-none z-[99999] font-sans">
+      {/* 1:1 AUTHENTIC TRADINGVIEW TOP BAR */}
+      <TradingViewTopBar
+        trade={trade}
+        timeframe={timeframe}
+        onTimeframeChange={(tf) => {
+          if (timeframe === tf) return;
+          if (candles[currentIndex]) {
+            activeReplayTimestampRef.current = candles[currentIndex].time;
+            activeReplayPriceRef.current = candles[currentIndex].close;
+          }
+          setTimeframe(tf);
+        }}
+        isDarkTheme={theme === 'dark'}
+        onThemeToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        isFullscreen={isFullscreen}
+        onFullscreenToggle={handleFullscreenToggle}
+        onOpenGoTo={() => setIsGoToOpen(true)}
+        onClose={onClose}
+        allTrades={allTrades}
+        currentTradeIndex={currentTradeIndex}
+        onSelectTrade={onSelectTrade}
+        onRefreshCandles={() => loadCandles(true)}
+        isSyncingCandles={isSyncingMT5}
+      />
 
       {/* MAIN BODY: Chart Canvas + Right Drawer */}
       <div className="flex-1 min-h-0 flex overflow-hidden relative">
@@ -570,9 +423,9 @@ export const TradeReplayModal: React.FC<Props> = ({
               isDarkTheme={theme === 'dark'}
             />
 
-            {/* Bottom Replay Control Toolbar */}
+            {/* Authentic TradingView Draggable Replay Bar */}
             {candles.length > 0 && (
-              <ReplayControls
+              <TradingViewReplayBar
                 candles={candles}
                 currentIndex={currentIndex}
                 isPlaying={isPlaying}
@@ -600,164 +453,240 @@ export const TradeReplayModal: React.FC<Props> = ({
                   setIsPlaying(false);
                   setCurrentIndex(index);
                 }}
+                onClose={() => setIsPlaying(false)}
+                isDarkTheme={theme === 'dark'}
               />
             )}
 
           </div>
 
-          {/* RIGHT DRAWER: Trade Details & Journal Notes (TradeZella Style) */}
-          {showRightDrawer && (
-            <aside className="w-80 lg:w-96 bg-[#111827] border-l border-[#1F2937] flex flex-col overflow-y-auto p-4 space-y-4 shrink-0 transition-all">
-              
-              {/* Outcome Header Box */}
-              <div className={`p-4 rounded-xl border ${
-                isWin 
-                  ? 'bg-emerald-500/10 border-emerald-500/30' 
-                  : trade.netProfit < 0 
-                  ? 'bg-rose-500/10 border-rose-500/30' 
-                  : 'bg-gray-800/50 border-gray-700'
+          {/* RIGHT SIDEBAR: TradingView Right Dock + Collapsible Drawer */}
+          <div className="flex h-full shrink-0 z-20">
+            {rightDockTab && (
+              <aside className={`w-80 lg:w-96 flex flex-col overflow-y-auto p-4 space-y-4 shrink-0 transition-all border-l ${
+                theme === 'dark' 
+                  ? 'bg-[#1e222d] border-[#2a2e39] text-[#d1d4dc]' 
+                  : 'bg-white border-[#e0e3eb] text-[#131722]'
               }`}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Final Outcome</span>
-                  <span className={`text-xs font-black px-2 py-0.5 rounded ${
-                    isWin ? 'bg-emerald-500 text-black' : trade.netProfit < 0 ? 'bg-rose-500 text-white' : 'bg-gray-700 text-gray-300'
-                  }`}>
-                    {isWin ? 'WIN' : trade.netProfit < 0 ? 'LOSS' : 'BREAK EVEN'}
+                <div className={`flex items-center justify-between pb-2 border-b ${
+                  theme === 'dark' ? 'border-[#2a2e39]' : 'border-[#e0e3eb]'
+                }`}>
+                  <span className="text-xs font-bold uppercase tracking-wider font-mono">
+                    {rightDockTab === 'details' ? 'Trade Execution & Stats' : rightDockTab === 'notes' ? 'Journal Notes & Mistakes' : 'Chart Drawings & Objects'}
                   </span>
-                </div>
-                
-                <div className="flex items-baseline justify-between">
-                  <div className={`text-2xl font-black font-mono ${
-                    isWin ? 'text-emerald-400' : trade.netProfit < 0 ? 'text-rose-400' : 'text-gray-300'
-                  }`}>
-                    {isWin ? '+' : ''}
-                    {isCent ? `${displayProfit.toFixed(2)} USC` : `$${displayProfit.toFixed(2)}`}
-                  </div>
-                  <div className="text-xs font-mono font-bold text-gray-300">
-                    {trade.pips >= 0 ? '+' : ''}{trade.pips} Pips
-                  </div>
+                  <button
+                    onClick={() => setRightDockTab(null)}
+                    className={`p-1 rounded transition-colors ${
+                      theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-[#2a2e39]' : 'text-gray-500 hover:text-black hover:bg-gray-100'
+                    }`}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
 
-                {trade.rMultiple !== undefined && (
-                  <div className="text-xs font-bold text-amber-400 mt-1 font-mono">
-                    R-Multiple: {trade.rMultiple >= 0 ? '+' : ''}{trade.rMultiple}R
-                  </div>
-                )}
-              </div>
-
-              {/* Execution Details Grid */}
-              <div className="bg-[#0B0F19] rounded-xl border border-[#1F2937] p-3 space-y-2.5 text-xs font-mono">
-                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider pb-1 border-b border-[#1F2937]">
-                  Execution Prices
-                </div>
-
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Entry Price:</span>
-                  <span className="font-bold text-cyan-400">{trade.openPrice.toFixed(precision)}</span>
-                </div>
-
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Exit Price:</span>
-                  <span className="font-bold text-white">{trade.closePrice.toFixed(precision)}</span>
-                </div>
-
-                {trade.stopLoss && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Stop Loss:</span>
-                    <span className="font-bold text-rose-400">{trade.stopLoss.toFixed(precision)}</span>
-                  </div>
-                )}
-
-                {trade.takeProfit && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Take Profit:</span>
-                    <span className="font-bold text-emerald-400">{trade.takeProfit.toFixed(precision)}</span>
-                  </div>
-                )}
-
-                <div className="flex justify-between border-t border-[#1F2937] pt-2 text-[11px]">
-                  <span className="text-gray-500">Session:</span>
-                  <span className="text-amber-400 font-semibold">{trade.session}</span>
-                </div>
-              </div>
-
-              {/* Strategy & Confluences */}
-              <div className="bg-[#0B0F19] rounded-xl border border-[#1F2937] p-3 space-y-2">
-                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                  Setup & Strategy
-                </div>
-                <div className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                  {trade.strategy || 'HyperTrade Execution'}
-                </div>
-
-                {trade.confluences && trade.confluences.length > 0 && (
-                  <div className="space-y-1 pt-1">
-                    <span className="text-[10px] text-gray-500 block uppercase font-bold">Confluences</span>
-                    <div className="flex flex-wrap gap-1">
-                      {trade.confluences.map(c => (
-                        <span key={c} className="px-2 py-0.5 rounded bg-gray-800 text-gray-300 text-[10px] flex items-center gap-1 border border-gray-700">
-                          <CheckSquare className="w-2.5 h-2.5 text-emerald-400" />
-                          {c}
+                {/* DETAILS TAB */}
+                {rightDockTab === 'details' && (
+                  <>
+                    {/* Outcome Header Box */}
+                    <div className={`p-4 rounded-xl border ${
+                      isWin 
+                        ? 'bg-emerald-500/10 border-emerald-500/30' 
+                        : trade.netProfit < 0 
+                        ? 'bg-rose-500/10 border-rose-500/30' 
+                        : theme === 'dark' ? 'bg-[#131722] border-[#2a2e39]' : 'bg-gray-100 border-gray-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Final Outcome</span>
+                        <span className={`text-xs font-black px-2 py-0.5 rounded ${
+                          isWin ? 'bg-emerald-500 text-black' : trade.netProfit < 0 ? 'bg-rose-500 text-white' : 'bg-gray-700 text-gray-300'
+                        }`}>
+                          {isWin ? 'WIN' : trade.netProfit < 0 ? 'LOSS' : 'BREAK EVEN'}
                         </span>
-                      ))}
+                      </div>
+                      
+                      <div className="flex items-baseline justify-between">
+                        <div className={`text-2xl font-black font-mono ${
+                          isWin ? 'text-emerald-400' : trade.netProfit < 0 ? 'text-rose-400' : 'text-gray-300'
+                        }`}>
+                          {isWin ? '+' : ''}
+                          {isCent ? `${displayProfit.toFixed(2)} USC` : `$${displayProfit.toFixed(2)}`}
+                        </div>
+                        <div className="text-xs font-mono font-bold text-gray-400">
+                          {trade.pips >= 0 ? '+' : ''}{trade.pips} Pips
+                        </div>
+                      </div>
+
+                      {trade.rMultiple !== undefined && (
+                        <div className="text-xs font-bold text-amber-400 mt-1 font-mono">
+                          R-Multiple: {trade.rMultiple >= 0 ? '+' : ''}{trade.rMultiple}R
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Execution Details Grid */}
+                    <div className={`rounded-xl border p-3 space-y-2.5 text-xs font-mono ${
+                      theme === 'dark' ? 'bg-[#131722] border-[#2a2e39]' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className={`text-[10px] font-bold uppercase tracking-wider pb-1 border-b ${
+                        theme === 'dark' ? 'text-gray-400 border-[#2a2e39]' : 'text-gray-500 border-gray-200'
+                      }`}>
+                        Execution Prices
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Entry Price:</span>
+                        <span className="font-bold text-cyan-400">{trade.openPrice.toFixed(precision)}</span>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Exit Price:</span>
+                        <span className="font-bold">{trade.closePrice.toFixed(precision)}</span>
+                      </div>
+
+                      {trade.stopLoss && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Stop Loss:</span>
+                          <span className="font-bold text-rose-400">{trade.stopLoss.toFixed(precision)}</span>
+                        </div>
+                      )}
+
+                      {trade.takeProfit && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Take Profit:</span>
+                          <span className="font-bold text-emerald-400">{trade.takeProfit.toFixed(precision)}</span>
+                        </div>
+                      )}
+
+                      <div className={`flex justify-between border-t pt-2 text-[11px] ${
+                        theme === 'dark' ? 'border-[#2a2e39]' : 'border-gray-200'
+                      }`}>
+                        <span className="text-gray-500">Session:</span>
+                        <span className="text-amber-400 font-semibold">{trade.session}</span>
+                      </div>
+                    </div>
+
+                    {/* Strategy & Confluences */}
+                    <div className={`rounded-xl border p-3 space-y-2 ${
+                      theme === 'dark' ? 'bg-[#131722] border-[#2a2e39]' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                        Setup & Strategy
+                      </div>
+                      <div className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                        {trade.strategy || 'HyperTrade Execution'}
+                      </div>
+
+                      {trade.confluences && trade.confluences.length > 0 && (
+                        <div className="space-y-1 pt-1">
+                          <span className="text-[10px] text-gray-500 block uppercase font-bold">Confluences</span>
+                          <div className="flex flex-wrap gap-1">
+                            {trade.confluences.map(c => (
+                              <span key={c} className={`px-2 py-0.5 rounded text-[10px] flex items-center gap-1 border ${
+                                theme === 'dark' ? 'bg-[#1e222d] text-gray-300 border-[#2a2e39]' : 'bg-white text-gray-700 border-gray-200'
+                              }`}>
+                                <CheckSquare className="w-2.5 h-2.5 text-emerald-400" />
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* NOTES TAB */}
+                {rightDockTab === 'notes' && (
+                  <>
+                    {/* Journal Notes */}
+                    <div className={`rounded-xl border p-3 space-y-1.5 ${
+                      theme === 'dark' ? 'bg-[#131722] border-[#2a2e39]' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                        Trade Journal Notes
+                      </div>
+                      <p className="text-xs leading-relaxed whitespace-pre-wrap">
+                        {trade.notes || 'No journal notes written for this trade.'}
+                      </p>
+                    </div>
+
+                    {/* Mistakes & Psychology */}
+                    {(trade.mistakes && trade.mistakes.length > 0) && (
+                      <div className="bg-[#0B0F19] rounded-xl border border-rose-500/30 p-3 space-y-2 bg-rose-950/10">
+                        <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Mistakes Made
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {trade.mistakes.map(m => (
+                            <span key={m} className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
+                              {m}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Screenshots preview */}
+                    {(trade.beforeChartUrl || trade.afterChartUrl) && (
+                      <div className="space-y-2 pt-2">
+                        <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <Camera className="w-3 h-3 text-amber-400" />
+                          Saved Trade Screenshots
+                        </div>
+                        {trade.beforeChartUrl && (
+                          <div>
+                            <span className="text-[9px] text-gray-500 block mb-1">Entry Chart:</span>
+                            <img src={trade.beforeChartUrl} alt="Before" className="w-full rounded-lg border border-[#2a2e39] object-cover max-h-36" />
+                          </div>
+                        )}
+                        {trade.afterChartUrl && (
+                          <div>
+                            <span className="text-[9px] text-gray-500 block mb-1">Outcome Chart:</span>
+                            <img src={trade.afterChartUrl} alt="After" className="w-full rounded-lg border border-[#2a2e39] object-cover max-h-36" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* DRAWINGS TAB */}
+                {rightDockTab === 'drawings' && (
+                  <div className={`rounded-xl border p-4 space-y-3 ${
+                    theme === 'dark' ? 'bg-[#131722] border-[#2a2e39]' : 'bg-gray-50 border-gray-200'
+                  }`}>
+                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                      Object Tree & Tools
+                    </div>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      Manage all drawn lines, geometric shapes, Fibonacci retracements, and price labels plotted on the replay canvas.
+                    </p>
+                    <div className="pt-2 border-t border-[#2a2e39] flex flex-col gap-2">
+                      <div className="text-xs font-semibold flex items-center justify-between">
+                        <span>Candlestick Series</span>
+                        <span className="text-[10px] text-emerald-400 font-mono">Active</span>
+                      </div>
+                      <div className="text-xs font-semibold flex items-center justify-between">
+                        <span>Trade Entry & Target Markers</span>
+                        <span className="text-[10px] text-blue-400 font-mono">Visible</span>
+                      </div>
+                      <div className="text-xs font-semibold flex items-center justify-between">
+                        <span>Drawing Overlay Canvas</span>
+                        <span className="text-[10px] text-amber-400 font-mono">Ready</span>
+                      </div>
                     </div>
                   </div>
                 )}
-              </div>
+              </aside>
+            )}
 
-              {/* Mistakes & Psychology */}
-              {(trade.mistakes && trade.mistakes.length > 0) && (
-                <div className="bg-[#0B0F19] rounded-xl border border-rose-500/30 p-3 space-y-2 bg-rose-950/10">
-                  <div className="text-[10px] text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Mistakes Made
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {trade.mistakes.map(m => (
-                      <span key={m} className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
-                        {m}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Journal Notes */}
-              {trade.notes && (
-                <div className="bg-[#0B0F19] rounded-xl border border-[#1F2937] p-3 space-y-1.5">
-                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                    Trade Journal Notes
-                  </div>
-                  <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">
-                    {trade.notes}
-                  </p>
-                </div>
-              )}
-
-              {/* Screenshots preview */}
-              {(trade.beforeChartUrl || trade.afterChartUrl) && (
-                <div className="space-y-2 pt-2">
-                  <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                    <Camera className="w-3 h-3 text-amber-400" />
-                    Saved Trade Screenshots
-                  </div>
-                  {trade.beforeChartUrl && (
-                    <div>
-                      <span className="text-[9px] text-gray-500 block mb-1">Entry Chart:</span>
-                      <img src={trade.beforeChartUrl} alt="Before" className="w-full rounded-lg border border-[#1F2937] object-cover max-h-36" />
-                    </div>
-                  )}
-                  {trade.afterChartUrl && (
-                    <div>
-                      <span className="text-[9px] text-gray-500 block mb-1">Outcome Chart:</span>
-                      <img src={trade.afterChartUrl} alt="After" className="w-full rounded-lg border border-[#1F2937] object-cover max-h-36" />
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </aside>
-          )}
+            <TradingViewRightDock
+              activeTab={rightDockTab}
+              onSelectTab={setRightDockTab}
+              isDarkTheme={theme === 'dark'}
+            />
+          </div>
 
         </div>
 

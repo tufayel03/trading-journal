@@ -33,12 +33,16 @@ export interface TradingViewReplayChartRef {
 export type ChartTheme = 'light' | 'dark' | 'white-hollow' | 'mt5';
 
 import { MT5TradeOverlay } from './MT5TradeOverlay';
+import { TradingViewLegend } from './TradingViewLegend';
+import { TradingViewFloatingFavorites } from './TradingViewFloatingFavorites';
+import { TradingViewBottomBar } from './TradingViewBottomBar';
 
 interface Props {
   candles: Candle[];
   visibleCount: number; // How many candles from the start are currently visible
   trade: Trade;
   theme?: ChartTheme;
+  timeframe?: string;
   onCrosshairMove?: (candleInfo: { time: string; open: string; high: string; low: string; close: string } | null) => void;
   onScrollNearStart?: (oldestTimestamp: number) => void;
   onOpenGoTo?: () => void;
@@ -60,7 +64,8 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
   candles,
   visibleCount,
   trade,
-  theme = 'light',
+  theme = 'dark',
+  timeframe = '5m',
   onCrosshairMove,
   onScrollNearStart,
   onOpenGoTo
@@ -78,6 +83,17 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
   const [activeColor, setActiveColor] = useState<string>('#0284C7');
   const [activeLineWidth, setActiveLineWidth] = useState<number>(2);
   const [isDrawingsVisible, setIsDrawingsVisible] = useState<boolean>(true);
+  const [isMagnetMode, setIsMagnetMode] = useState<boolean>(false);
+  const [isStayInDrawingMode, setIsStayInDrawingMode] = useState<boolean>(false);
+  const [isLocked, setIsLocked] = useState<boolean>(false);
+  const [showFavoritesBar, setShowFavoritesBar] = useState<boolean>(true);
+  const [hoveredCandleInfo, setHoveredCandleInfo] = useState<{
+    time: string;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+  } | null>(null);
 
   // Local storage persistence for drawings
   const storageKey = `drawings_${trade.symbol}`;
@@ -276,15 +292,18 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
           ? new Date(param.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : String(param.time);
 
-        onCrosshairMove({
+        const info = {
           time: timeVal,
           open: Number(data.open).toFixed(precision),
           high: Number(data.high).toFixed(precision),
           low: Number(data.low).toFixed(precision),
           close: Number(data.close).toFixed(precision)
-        });
+        };
+        onCrosshairMove?.(info);
+        setHoveredCandleInfo(info);
       } else {
-        onCrosshairMove(null);
+        onCrosshairMove?.(null);
+        setHoveredCandleInfo(null);
       }
     });
 
@@ -389,56 +408,101 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
   }, [candles, visibleCount, trade, precision, theme, themeColors.entryLine, themeColors.exitLineWin, themeColors.exitLineLoss, themeColors.exitLineEven, themeColors.slLine, themeColors.tpLine]);
 
   return (
-    <div className={`relative w-full h-full min-w-0 min-h-0 select-none overflow-hidden flex ${isLight ? 'bg-white' : 'bg-[#0B0F19]'}`}>
+    <div className={`relative w-full h-full min-w-0 min-h-0 select-none overflow-hidden flex flex-col ${isLight ? 'bg-white' : 'bg-[#131722]'}`}>
       
-      {/* TradingView Docked Left Sidepanel Drawing Toolbar (Matching TradingView Desktop) */}
-      <TradingViewDrawingToolbar
-        activeTool={activeTool}
-        onSelectTool={setActiveTool}
-        activeColor={activeColor}
-        onChangeColor={setActiveColor}
-        activeLineWidth={activeLineWidth}
-        onChangeLineWidth={setActiveLineWidth}
-        drawingsCount={drawings.length}
-        onUndo={handleUndo}
-        onClearAll={handleClearAll}
-        isVisible={isDrawingsVisible}
-        onToggleVisibility={() => setIsDrawingsVisible(!isDrawingsVisible)}
+      {/* Upper Area: Left Toolbar + Chart Canvas */}
+      <div className="flex-1 min-w-0 min-h-0 flex relative overflow-hidden">
+        
+        {/* TradingView Docked Left Sidepanel Drawing Toolbar (1:1 TradingView replica) */}
+        <TradingViewDrawingToolbar
+          activeTool={activeTool}
+          onSelectTool={setActiveTool}
+          activeColor={activeColor}
+          onChangeColor={setActiveColor}
+          activeLineWidth={activeLineWidth}
+          onChangeLineWidth={setActiveLineWidth}
+          drawingsCount={drawings.length}
+          onUndo={handleUndo}
+          onClearAll={handleClearAll}
+          isVisible={isDrawingsVisible}
+          onToggleVisibility={() => setIsDrawingsVisible(!isDrawingsVisible)}
+          isMagnetMode={isMagnetMode}
+          onToggleMagnetMode={() => setIsMagnetMode(!isMagnetMode)}
+          isStayInDrawingMode={isStayInDrawingMode}
+          onToggleStayInDrawingMode={() => setIsStayInDrawingMode(!isStayInDrawingMode)}
+          isLocked={isLocked}
+          onToggleLock={() => setIsLocked(!isLocked)}
+          showFavoritesBar={showFavoritesBar}
+          onToggleFavoritesBar={() => setShowFavoritesBar(!showFavoritesBar)}
+          isDarkTheme={!isLight}
+        />
+
+        {/* Chart Canvas Area + Interactive Drawing Layer */}
+        <div className="flex-1 min-w-0 min-h-0 h-full relative overflow-hidden">
+          <div ref={containerRef} className="w-full h-full min-w-0 min-h-0" />
+
+          {/* Authentic TradingView Legend & Status Line */}
+          <TradingViewLegend
+            trade={trade}
+            hoveredCandle={hoveredCandleInfo}
+            lastCandle={currentSlice.length > 0 ? currentSlice[currentSlice.length - 1] : null}
+            timeframe={timeframe}
+            precision={precision}
+            isDarkTheme={!isLight}
+          />
+
+          {/* TradingView Floating Favorite Drawings Toolbar (Matching Image 1) */}
+          {showFavoritesBar && (
+            <TradingViewFloatingFavorites
+              activeTool={activeTool}
+              onSelectTool={setActiveTool}
+              activeColor={activeColor}
+              onChangeColor={setActiveColor}
+              onClearAll={handleClearAll}
+              drawingsCount={drawings.length}
+              isDarkTheme={!isLight}
+            />
+          )}
+
+          {/* Authentic MT5 Trade Execution History Overlay */}
+          <MT5TradeOverlay
+            chart={chartRef.current}
+            series={candlestickSeriesRef.current}
+            trade={trade}
+            candles={candles}
+            currentSlice={currentSlice}
+            precision={precision}
+            isLight={isLight}
+          />
+
+          {/* Full Interactive Drawing Layer */}
+          <TradingViewDrawingLayer
+            chart={chartRef.current}
+            series={candlestickSeriesRef.current}
+            trade={trade}
+            precision={precision}
+            activeTool={activeTool}
+            onFinishDrawing={() => setActiveTool('cursor')}
+            activeColor={activeColor}
+            activeLineWidth={activeLineWidth}
+            drawings={drawings}
+            onUpdateDrawings={saveDrawings}
+            isVisible={isDrawingsVisible}
+            isLight={isLight}
+            currentSlice={currentSlice}
+            isMagnetMode={isMagnetMode}
+            isStayInDrawingMode={isStayInDrawingMode}
+            isLocked={isLocked}
+          />
+        </div>
+
+      </div>
+
+      {/* TradingView Authentic Bottom Bar */}
+      <TradingViewBottomBar
         onOpenGoTo={onOpenGoTo}
         isDarkTheme={!isLight}
       />
-
-      {/* Chart Canvas Area + Interactive Drawing Layer */}
-      <div className="flex-1 min-w-0 min-h-0 h-full relative">
-        <div ref={containerRef} className="w-full h-full min-w-0 min-h-0" />
-
-        {/* Authentic MT5 Trade Execution History Overlay */}
-        <MT5TradeOverlay
-          chart={chartRef.current}
-          series={candlestickSeriesRef.current}
-          trade={trade}
-          candles={candles}
-          currentSlice={currentSlice}
-          precision={precision}
-          isLight={isLight}
-        />
-
-        <TradingViewDrawingLayer
-          chart={chartRef.current}
-          series={candlestickSeriesRef.current}
-          trade={trade}
-          precision={precision}
-          activeTool={activeTool}
-          onFinishDrawing={() => setActiveTool('cursor')}
-          activeColor={activeColor}
-          activeLineWidth={activeLineWidth}
-          drawings={drawings}
-          onUpdateDrawings={saveDrawings}
-          isVisible={isDrawingsVisible}
-          isLight={isLight}
-          currentSlice={currentSlice}
-        />
-      </div>
 
     </div>
   );

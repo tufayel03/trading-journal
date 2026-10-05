@@ -18,6 +18,9 @@ interface Props {
   isVisible: boolean;
   isLight: boolean;
   currentSlice: { time: number; open: number; high: number; low: number; close: number }[];
+  isMagnetMode?: boolean;
+  isStayInDrawingMode?: boolean;
+  isLocked?: boolean;
 }
 
 const PRESET_COLORS = [
@@ -44,7 +47,10 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
   onUpdateDrawings,
   isVisible,
   isLight,
-  currentSlice
+  currentSlice,
+  isMagnetMode = false,
+  isStayInDrawingMode = false,
+  isLocked = false
 }) => {
   const containerRef = useRef<SVGSVGElement>(null);
   const [currentDrawing, setCurrentDrawing] = useState<ChartDrawing | null>(null);
@@ -253,10 +259,40 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
     });
   };
 
+  // Snap coordinate helper for Magnet mode
+  const snapToCandle = useCallback((rawTime: number, rawPrice: number) => {
+    if (!isMagnetMode || currentSlice.length === 0) return { time: rawTime, price: rawPrice };
+    let closest = currentSlice[0];
+    let minDiff = Math.abs(currentSlice[0].time - rawTime);
+    for (const c of currentSlice) {
+      const diff = Math.abs(c.time - rawTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = c;
+      }
+    }
+    const candidates = [closest.open, closest.high, closest.low, closest.close];
+    let bestPrice = candidates[0];
+    let minPriceDiff = Math.abs(candidates[0] - rawPrice);
+    for (const p of candidates) {
+      const pDiff = Math.abs(p - rawPrice);
+      if (pDiff < minPriceDiff) {
+        minPriceDiff = pDiff;
+        bestPrice = p;
+      }
+    }
+    return { time: closest.time, price: Number(bestPrice.toFixed(precision)) };
+  }, [isMagnetMode, currentSlice, precision]);
+
   // Mouse Handlers for Interactive Drawing
   const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (activeTool === 'cursor') {
+    if (activeTool === 'cursor' || activeTool === 'dot' || activeTool === 'arrow_cursor') {
       setSelectedDrawingId(null);
+      return;
+    }
+
+    if (activeTool === 'eraser') {
+      // In eraser mode, clicking on a drawing deletes it
       return;
     }
 
@@ -265,8 +301,11 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
 
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const time = xToTime(x);
-    const price = yToPrice(y);
+    const rawTime = xToTime(x);
+    const rawPrice = yToPrice(y);
+    const snapped = snapToCandle(rawTime, rawPrice);
+    const time = snapped.time;
+    const price = snapped.price;
 
     if (activeTool === 'text') {
       setTextInputPos({ x, y, time, price });
@@ -274,7 +313,7 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
       return;
     }
 
-    if (activeTool === 'horizontal' || activeTool === 'ray') {
+    if (activeTool === 'horizontal' || activeTool === 'ray' || activeTool === 'horizontal_ray' || activeTool === 'vertical' || activeTool === 'cross_line' || activeTool === 'price_label') {
       const newDrawing: ChartDrawing = {
         id: 'draw_' + Date.now(),
         type: activeTool,
@@ -285,7 +324,9 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
       };
       onUpdateDrawings([...drawings, newDrawing]);
       setSelectedDrawingId(newDrawing.id);
-      onFinishDrawing();
+      if (!isStayInDrawingMode) {
+        onFinishDrawing();
+      }
       return;
     }
 
@@ -309,11 +350,14 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
 
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const time = xToTime(x);
-    const price = yToPrice(y);
+    const rawTime = xToTime(x);
+    const rawPrice = yToPrice(y);
+    const snapped = snapToCandle(rawTime, rawPrice);
+    const time = snapped.time;
+    const price = snapped.price;
 
     // 1. Dragging / moving an existing drawing
-    if (dragState && dragState.isDragging) {
+    if (dragState && dragState.isDragging && !isLocked) {
       const deltaTime = time - dragState.startMouseTime;
       const deltaPrice = price - dragState.startMousePrice;
 
@@ -346,7 +390,7 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
 
     // 2. Creating a new drawing
     if (currentDrawing) {
-      if (currentDrawing.type === 'brush') {
+      if (currentDrawing.type === 'brush' || currentDrawing.type === 'highlighter') {
         setCurrentDrawing(prev => prev ? {
           ...prev,
           points: [...prev.points, { time, price }]
@@ -366,12 +410,14 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
     }
 
     if (currentDrawing) {
-      if (currentDrawing.points.length >= 2 || currentDrawing.type === 'brush') {
+      if (currentDrawing.points.length >= 2 || currentDrawing.type === 'brush' || currentDrawing.type === 'highlighter') {
         onUpdateDrawings([...drawings, currentDrawing]);
         setSelectedDrawingId(currentDrawing.id);
       }
       setCurrentDrawing(null);
-      onFinishDrawing();
+      if (!isStayInDrawingMode) {
+        onFinishDrawing();
+      }
     }
   };
 
@@ -951,6 +997,181 @@ export const TradingViewDrawingLayer: React.FC<Props> = ({
               fontFamily="Inter, sans-serif"
             >
               {d.text}
+            </text>
+          </g>
+        );
+      }
+
+      case 'horizontal_ray': {
+        if (d.points.length === 0) return null;
+        const x1Raw = timeToX(d.points[0].time);
+        const y = priceToY(d.points[0].price);
+        if (y === null) return null;
+        const startX = Math.max(0, x1Raw !== null ? x1Raw : 0);
+        return (
+          <g key={d.id} data-drawing-element="true">
+            <line x1={startX} y1={y} x2={dimensions.width} y2={y} stroke={d.color} strokeWidth={d.lineWidth || 1.5} />
+            <circle cx={startX} cy={y} r={4} fill={d.color} stroke="#FFFFFF" strokeWidth={1.5} />
+          </g>
+        );
+      }
+
+      case 'vertical': {
+        if (d.points.length === 0) return null;
+        const x = timeToX(d.points[0].time);
+        if (x === null) return null;
+        return (
+          <g key={d.id} data-drawing-element="true">
+            <line x1={x} y1={0} x2={x} y2={dimensions.height} stroke={d.color} strokeWidth={d.lineWidth || 1.5} />
+          </g>
+        );
+      }
+
+      case 'cross_line': {
+        if (d.points.length === 0) return null;
+        const x = timeToX(d.points[0].time);
+        const y = priceToY(d.points[0].price);
+        if (x === null || y === null) return null;
+        return (
+          <g key={d.id} data-drawing-element="true">
+            <line x1={0} y1={y} x2={dimensions.width} y2={y} stroke={d.color} strokeWidth={1} strokeDasharray="3,3" />
+            <line x1={x} y1={0} x2={x} y2={dimensions.height} stroke={d.color} strokeWidth={1} strokeDasharray="3,3" />
+            <circle cx={x} cy={y} r={4} fill={d.color} stroke="#FFFFFF" strokeWidth={1.5} />
+          </g>
+        );
+      }
+
+      case 'circle':
+      case 'ellipse': {
+        if (d.points.length < 2) return null;
+        const x1 = timeToX(d.points[0].time);
+        const y1 = priceToY(d.points[0].price);
+        const x2 = timeToX(d.points[1].time);
+        const y2 = priceToY(d.points[1].price);
+        if (x1 === null || y1 === null || x2 === null || y2 === null) return null;
+        const cx = (x1 + x2) / 2;
+        const cy = (y1 + y2) / 2;
+        const rx = Math.max(5, Math.abs(x2 - x1) / 2);
+        const ry = Math.max(5, Math.abs(y2 - y1) / 2);
+        return (
+          <g key={d.id} data-drawing-element="true">
+            <ellipse
+              cx={cx}
+              cy={cy}
+              rx={rx}
+              ry={ry}
+              fill={d.fillColor || (d.color + '20')}
+              stroke={d.color}
+              strokeWidth={d.lineWidth || 1.5}
+            />
+          </g>
+        );
+      }
+
+      case 'highlighter': {
+        if (d.points.length < 2) return null;
+        const pts = d.points
+          .map(p => {
+            const px = timeToX(p.time);
+            const py = priceToY(p.price);
+            return px !== null && py !== null ? `${px},${py}` : null;
+          })
+          .filter(Boolean)
+          .join(' ');
+        if (!pts) return null;
+        return (
+          <g key={d.id}>
+            <polyline
+              points={pts}
+              fill="none"
+              stroke={d.color}
+              strokeWidth={16}
+              opacity={0.35}
+              strokeLinecap="square"
+              strokeLinejoin="round"
+            />
+          </g>
+        );
+      }
+
+      case 'price_label': {
+        if (d.points.length === 0) return null;
+        const x = timeToX(d.points[0].time);
+        const y = priceToY(d.points[0].price);
+        if (x === null || y === null) return null;
+        return (
+          <g key={d.id} data-drawing-element="true">
+            <polygon points={`${x},${y} ${x + 8},${y - 9} ${x + 8},${y + 9}`} fill={d.color} />
+            <rect x={x + 8} y={y - 10} width={65} height={20} rx={3} fill={d.color} />
+            <text x={x + 40} y={y + 4} fill="#FFFFFF" fontSize="10" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+              {d.points[0].price.toFixed(precision)}
+            </text>
+          </g>
+        );
+      }
+
+      case 'measure': {
+        if (d.points.length < 2) return null;
+        const x1 = timeToX(d.points[0].time);
+        const y1 = priceToY(d.points[0].price);
+        const x2 = timeToX(d.points[1].time);
+        const y2 = priceToY(d.points[1].price);
+        if (x1 === null || y1 === null || x2 === null || y2 === null) return null;
+
+        const left = Math.min(x1, x2);
+        const top = Math.min(y1, y2);
+        const width = Math.max(10, Math.abs(x2 - x1));
+        const height = Math.max(10, Math.abs(y2 - y1));
+
+        const price1 = d.points[0].price;
+        const price2 = d.points[1].price;
+        const priceDiff = price2 - price1;
+        const pct = price1 ? (priceDiff / price1) * 100 : 0;
+        const pipDiff = trade.symbol.includes('XAU') ? priceDiff / 0.10 : trade.symbol.includes('JPY') ? priceDiff / 0.01 : priceDiff / 0.0001;
+
+        return (
+          <g key={d.id} data-drawing-element="true">
+            <rect
+              x={left}
+              y={top}
+              width={width}
+              height={height}
+              fill="rgba(41, 98, 255, 0.15)"
+              stroke="#2962FF"
+              strokeWidth={1.5}
+              strokeDasharray="4,4"
+            />
+            {/* Stats Badge */}
+            <rect
+              x={left + width / 2 - 60}
+              y={top + height / 2 - 14}
+              width={120}
+              height={28}
+              rx={6}
+              fill="#1E222D"
+              stroke="#2962FF"
+              strokeWidth={1}
+            />
+            <text
+              x={left + width / 2}
+              y={top + height / 2 - 1}
+              fill="#FFFFFF"
+              fontSize="10"
+              fontWeight="bold"
+              fontFamily="monospace"
+              textAnchor="middle"
+            >
+              {priceDiff >= 0 ? '+' : ''}{priceDiff.toFixed(precision)} ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+            </text>
+            <text
+              x={left + width / 2}
+              y={top + height / 2 + 10}
+              fill="#787B86"
+              fontSize="9"
+              fontFamily="monospace"
+              textAnchor="middle"
+            >
+              {pipDiff.toFixed(1)} pips
             </text>
           </g>
         );
