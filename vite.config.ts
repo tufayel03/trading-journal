@@ -35,11 +35,132 @@ function mt5SyncPlugin(): Plugin {
         account: null,
         openPositions: [],
         totalSyncedDeals: 0,
-        lastSync: new Date().toISOString()
+        lastSync: new Date().toISOString(),
+        removedAccounts: []
+      };
+
+      const consolidatePartialCloseTrades = (trades: any[]): any[] => {
+        if (!Array.isArray(trades) || trades.length === 0) return [];
+
+        const posMap = new Map<string, any[]>();
+        const nonPosTrades: any[] = [];
+
+        for (const t of trades) {
+          const pid = t.positionId ? String(t.positionId).trim() : '';
+          const acc = String(t.accountLogin || '').trim();
+          if (pid && pid !== '0' && pid !== 'undefined') {
+            const key = `${acc}_${pid}`;
+            if (!posMap.has(key)) posMap.set(key, []);
+            posMap.get(key)!.push(t);
+          } else {
+            nonPosTrades.push(t);
+          }
+        }
+
+        const consolidated: any[] = [];
+
+        posMap.forEach((deals) => {
+          if (deals.length === 1) {
+            consolidated.push(deals[0]);
+            return;
+          }
+
+          deals.sort((a, b) => new Date(a.closeTime || a.openTime).getTime() - new Date(b.closeTime || b.openTime).getTime());
+
+          const base = deals[deals.length - 1];
+          const firstDeal = deals[0];
+
+          const totalLots = Number(deals.reduce((acc, d) => acc + (Number(d.lotSize || d.lots) || 0), 0).toFixed(2));
+          let weightedClosePrice = base.closePrice;
+          if (totalLots > 0) {
+            const sumWeightedPrice = deals.reduce((acc, d) => {
+              const vol = Number(d.lotSize || d.lots) || 0;
+              return acc + (Number(d.closePrice) * vol);
+            }, 0);
+            weightedClosePrice = Number((sumWeightedPrice / totalLots).toFixed(5));
+          }
+
+          const netProfit = Number(deals.reduce((acc, d) => acc + (Number(d.netProfit !== undefined ? d.netProfit : d.profit) || 0), 0).toFixed(4));
+          const nativeNetProfit = Number(deals.reduce((acc, d) => acc + (Number(d.nativeNetProfit !== undefined ? d.nativeNetProfit : d.netProfit) || 0), 0).toFixed(2));
+          const commission = Number(deals.reduce((acc, d) => acc + (Number(d.commission) || 0), 0).toFixed(4));
+          const nativeCommission = Number(deals.reduce((acc, d) => acc + (Number(d.nativeCommission !== undefined ? d.nativeCommission : d.commission) || 0), 0).toFixed(2));
+          const swap = Number(deals.reduce((acc, d) => acc + (Number(d.swap) || 0), 0).toFixed(4));
+          const nativeSwap = Number(deals.reduce((acc, d) => acc + (Number(d.nativeSwap !== undefined ? d.nativeSwap : d.swap) || 0), 0).toFixed(2));
+
+          const partialCloses: any[] = [];
+          deals.forEach(d => {
+            if (Array.isArray(d.partialCloses) && d.partialCloses.length > 0) {
+              partialCloses.push(...d.partialCloses);
+            } else {
+              partialCloses.push({
+                ticket: String(d.ticket || d.id || ''),
+                closeTime: d.closeTime,
+                closePrice: Number(d.closePrice),
+                lotSize: Number(d.lotSize || d.lots || 0),
+                netProfit: Number(d.netProfit || 0)
+              });
+            }
+          });
+
+          const openPrice = firstDeal.openPrice || base.openPrice;
+          const direction = firstDeal.direction || base.direction;
+          const sym = base.symbol || '';
+          let pips = 0;
+          if (openPrice && weightedClosePrice) {
+            const diff = direction === 'BUY' ? weightedClosePrice - openPrice : openPrice - weightedClosePrice;
+            if (sym.includes('XAU') || sym.includes('GOLD')) {
+              pips = Number((diff / 0.10).toFixed(1));
+            } else if (sym.includes('JPY')) {
+              pips = Number((diff / 0.01).toFixed(1));
+            } else if (sym.includes('BTC') || sym.includes('ETH')) {
+              pips = Number(diff.toFixed(2));
+            } else if (openPrice < 5) {
+              pips = Number((diff / 0.0001).toFixed(1));
+            } else {
+              pips = Number(diff.toFixed(2));
+            }
+          }
+
+          const customNotes = deals.find(d => d.notes && !d.notes.startsWith('Auto-synced from MT5'))?.notes;
+          const mergedMistakes = Array.from(new Set(deals.flatMap(d => d.mistakes || [])));
+          const mergedConfluences = Array.from(new Set(deals.flatMap(d => d.confluences || ['MT5 Live Execution'])));
+
+          const mergedTrade = {
+            ...base,
+            id: `mt5-${base.accountLogin || ''}-${base.positionId}`,
+            ticket: String(base.positionId),
+            positionId: String(base.positionId),
+            openPrice,
+            openTime: firstDeal.openTime,
+            closePrice: weightedClosePrice,
+            closeTime: base.closeTime,
+            lotSize: totalLots,
+            lots: totalLots,
+            netProfit,
+            nativeNetProfit,
+            commission,
+            nativeCommission,
+            swap,
+            nativeSwap,
+            pips,
+            partialCloses,
+            mistakes: mergedMistakes,
+            confluences: mergedConfluences,
+            notes: customNotes || `Auto-synced from MT5 #${base.accountLogin} (Partial close: ${deals.length} exits, avg exit: ${weightedClosePrice})`
+          };
+
+          consolidated.push(mergedTrade);
+        });
+
+        const allMerged = [...consolidated, ...nonPosTrades];
+        allMerged.sort((a, b) => new Date(b.closeTime || b.openTime).getTime() - new Date(a.closeTime || a.openTime).getTime());
+        return allMerged;
       };
 
       try {
         inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8'));
+        inMemoryTrades = consolidatePartialCloseTrades(inMemoryTrades);
+        fs.writeFileSync(syncFile, JSON.stringify(inMemoryTrades, null, 2), 'utf-8');
       } catch {}
       try {
         const parsedStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
@@ -48,7 +169,8 @@ function mt5SyncPlugin(): Plugin {
           account: parsedStatus.account || null,
           openPositions: parsedStatus.openPositions || [],
           totalSyncedDeals: parsedStatus.totalSyncedDeals || 0,
-          lastSync: parsedStatus.lastSync || new Date().toISOString()
+          lastSync: parsedStatus.lastSync || new Date().toISOString(),
+          removedAccounts: Array.isArray(parsedStatus.removedAccounts) ? parsedStatus.removedAccounts.map(String) : []
         };
       } catch {}
 
@@ -144,11 +266,14 @@ function mt5SyncPlugin(): Plugin {
           confluences: trade.confluences || ['MT5 Live Execution'],
           mistakes: trade.mistakes || [],
           emotions: trade.emotions || 'Disciplined',
+          comment: trade.comment || '',
           notes: trade.comment ? `MT5 Deal #${trade.ticket || ''}: ${trade.comment}` : (trade.notes || `Auto-synced from MT5 #${accountLogin}`),
           accountLogin,
           accountServer,
           accountCurrency: isCent ? 'USC' : accountCurrency,
           isCent,
+          positionId: trade.positionId ? String(trade.positionId) : undefined,
+          partialCloses: Array.isArray(trade.partialCloses) ? trade.partialCloses : undefined,
           receivedAt: new Date().toISOString()
         };
       };
@@ -166,11 +291,51 @@ function mt5SyncPlugin(): Plugin {
           if (Array.isArray(raw.openPositions)) openPositionsData = raw.openPositions;
         }
 
-        const parsedTrades = tradesList.map(t => parseIncomingTrade(t, accountData)).filter(Boolean);
+        const removedAccounts: string[] = Array.isArray(inMemoryStatus.removedAccounts)
+          ? inMemoryStatus.removedAccounts.map(String)
+          : [];
+
+        // If the bundle belongs to an account that was explicitly removed, reject it completely!
+        if (accountData && accountData.login && removedAccounts.includes(String(accountData.login))) {
+          return {
+            trades: inMemoryTrades,
+            newCount: 0,
+            accounts: inMemoryStatus.accounts,
+            account: inMemoryStatus.account,
+            openPositions: inMemoryStatus.openPositions
+          };
+        }
+
+        // Filter out incoming trades belonging to removed accounts
+        const parsedTrades = tradesList
+          .map(t => parseIncomingTrade(t, accountData))
+          .filter(Boolean)
+          .filter(t => 
+            !removedAccounts.includes(String(t.accountLogin)) && 
+            !removedAccounts.some(r => String(t.id || '').startsWith(`mt5-${r}-`))
+          );
+
+        // Filter out open positions belonging to removed accounts
+        openPositionsData = openPositionsData.filter(p => {
+          const accLogin = String(p.accountLogin || accountData?.login || '');
+          return !removedAccounts.includes(accLogin);
+        });
+
+        // Ensure inMemoryTrades never retains any removed account trades
+        if (removedAccounts.length > 0) {
+          inMemoryTrades = inMemoryTrades.filter((t: any) => 
+            !removedAccounts.includes(String(t.accountLogin)) &&
+            !removedAccounts.some(r => String(t.id || '').startsWith(`mt5-${r}-`))
+          );
+        }
+
         let changed = false;
 
         parsedTrades.forEach(nt => {
-          const idx = inMemoryTrades.findIndex((t: any) => t.ticket && String(t.ticket) === String(nt.ticket));
+          const idx = inMemoryTrades.findIndex((t: any) => 
+            (nt.positionId && t.positionId && String(t.positionId) === String(nt.positionId) && String(t.accountLogin || '') === String(nt.accountLogin || '')) ||
+            (t.ticket && String(t.ticket) === String(nt.ticket))
+          );
           if (idx >= 0) {
             const existing = inMemoryTrades[idx];
             inMemoryTrades[idx] = {
@@ -189,6 +354,8 @@ function mt5SyncPlugin(): Plugin {
               accountServer: nt.accountServer || existing.accountServer,
               accountCurrency: nt.accountCurrency || existing.accountCurrency,
               isCent: nt.isCent !== undefined ? nt.isCent : existing.isCent,
+              partialCloses: nt.partialCloses || existing.partialCloses,
+              positionId: nt.positionId || existing.positionId,
               mistakes: (existing.mistakes && existing.mistakes.length > 0) ? existing.mistakes : (nt.mistakes || []),
               notes: existing.notes && !existing.notes.startsWith('Auto-synced from MT5') ? existing.notes : (nt.notes || existing.notes),
               rating: existing.rating || (nt as any).rating || 0,
@@ -204,6 +371,9 @@ function mt5SyncPlugin(): Plugin {
           }
         });
 
+        // Consolidate partial close deals into unified positions
+        inMemoryTrades = consolidatePartialCloseTrades(inMemoryTrades);
+
         if (changed) {
           try {
             fs.writeFileSync(syncFile, JSON.stringify(inMemoryTrades, null, 2), 'utf-8');
@@ -213,9 +383,7 @@ function mt5SyncPlugin(): Plugin {
         if (accountData) {
           const loginKey = String(accountData.login);
 
-          // Check if this account was removed by the user
-          inMemoryStatus.removedAccounts = inMemoryStatus.removedAccounts || [];
-          if (inMemoryStatus.removedAccounts.includes(loginKey)) {
+          if (removedAccounts.includes(loginKey)) {
             return {
               trades: inMemoryTrades,
               newCount: 0,
@@ -323,6 +491,20 @@ function mt5SyncPlugin(): Plugin {
                 if (content && content.trim().length > 0 && content !== terminalFileHashes[dir]) {
                   terminalFileHashes[dir] = content;
                   const raw = JSON.parse(content);
+                  const accLogin = String(raw?.account?.login || '');
+                  const removedAccounts: string[] = Array.isArray(inMemoryStatus.removedAccounts)
+                    ? inMemoryStatus.removedAccounts.map(String)
+                    : [];
+
+                  if (accLogin && removedAccounts.includes(accLogin)) {
+                    // This file belongs to a removed account. Wipe file so it stops re-importing
+                    try {
+                      fs.writeFileSync(directSync, JSON.stringify({ account: null, openPositions: [], trades: [] }, null, 2), 'utf-8');
+                      terminalFileHashes[dir] = '';
+                    } catch {}
+                    continue;
+                  }
+
                   processSyncBundle(raw);
                 }
               } catch {}
@@ -441,11 +623,28 @@ function mt5SyncPlugin(): Plugin {
           if (fs.existsSync(syncFile)) {
             try { inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8')); } catch {}
           }
+          inMemoryTrades = consolidatePartialCloseTrades(inMemoryTrades);
+          const removedList: string[] = Array.isArray(inMemoryStatus.removedAccounts)
+            ? inMemoryStatus.removedAccounts.map(String)
+            : [];
+          if (removedList.length > 0) {
+            inMemoryTrades = inMemoryTrades.filter((t: any) => 
+              !removedList.includes(String(t.accountLogin)) &&
+              !removedList.some(r => String(t.id || '').startsWith(`mt5-${r}-`))
+            );
+          }
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(inMemoryTrades));
         } else if (req.method === 'DELETE') {
           inMemoryTrades = [];
-          inMemoryStatus = { accounts: {}, account: null, openPositions: [], totalSyncedDeals: 0, lastSync: new Date().toISOString() };
+          inMemoryStatus = { 
+            accounts: {}, 
+            account: null, 
+            openPositions: [], 
+            totalSyncedDeals: 0, 
+            lastSync: new Date().toISOString(),
+            removedAccounts: inMemoryStatus.removedAccounts || []
+          };
           try {
             fs.writeFileSync(syncFile, '[]', 'utf-8');
             fs.writeFileSync(statusFile, JSON.stringify(inMemoryStatus, null, 2), 'utf-8');
@@ -469,9 +668,37 @@ function mt5SyncPlugin(): Plugin {
         scanMT5DirectFiles();
         if (fs.existsSync(statusFile)) {
           try {
-            inMemoryStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+            const diskStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
+            const mergedRemoved = Array.from(new Set([
+              ...(Array.isArray(diskStatus.removedAccounts) ? diskStatus.removedAccounts.map(String) : []),
+              ...(Array.isArray(inMemoryStatus.removedAccounts) ? inMemoryStatus.removedAccounts.map(String) : [])
+            ]));
+            inMemoryStatus = {
+              ...diskStatus,
+              removedAccounts: mergedRemoved
+            };
           } catch {}
         }
+
+        // Purge any removed accounts from inMemoryStatus before responding
+        if (inMemoryStatus.removedAccounts && inMemoryStatus.removedAccounts.length > 0) {
+          const removedSet = new Set<string>(inMemoryStatus.removedAccounts.map(String));
+          if (inMemoryStatus.accounts) {
+            for (const rem of removedSet) {
+              delete (inMemoryStatus.accounts as any)[rem];
+            }
+          }
+          if (inMemoryStatus.openPositions) {
+            inMemoryStatus.openPositions = inMemoryStatus.openPositions.filter(
+              (p: any) => !removedSet.has(String(p.accountLogin))
+            );
+          }
+          if (inMemoryStatus.account && removedSet.has(String(inMemoryStatus.account.login))) {
+            const remaining = Object.values(inMemoryStatus.accounts || {})[0] || null;
+            inMemoryStatus.account = remaining;
+          }
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(inMemoryStatus));
       };
@@ -655,7 +882,9 @@ function mt5SyncPlugin(): Plugin {
             }
 
             if (inMemoryStatus.account?.login === loginKey) {
-              const remainingLogins = Object.keys(inMemoryStatus.accounts || {});
+              const remainingLogins = Object.keys(inMemoryStatus.accounts || {}).filter(
+                k => !inMemoryStatus.removedAccounts.includes(k)
+              );
               inMemoryStatus.account = remainingLogins.length > 0 ? inMemoryStatus.accounts[remainingLogins[0]] : null;
             }
 
@@ -665,9 +894,36 @@ function mt5SyncPlugin(): Plugin {
 
             if (type === 'hard') {
               // Hard remove: Delete all trades from this account from database
-              inMemoryTrades = inMemoryTrades.filter((t: any) => String(t.accountLogin) !== loginKey);
+              inMemoryTrades = inMemoryTrades.filter((t: any) => 
+                String(t.accountLogin) !== loginKey &&
+                !String(t.id || '').startsWith(`mt5-${loginKey}-`) &&
+                !String(t.notes || '').includes(`#${loginKey}`)
+              );
               try {
                 fs.writeFileSync(syncFile, JSON.stringify(inMemoryTrades, null, 2), 'utf-8');
+              } catch {}
+
+              // Also purge direct sync file in APPDATA MetaQuotes if it belongs to this account
+              try {
+                if (appData) {
+                  const mt5Base = path.join(appData, 'MetaQuotes', 'Terminal');
+                  if (fs.existsSync(mt5Base)) {
+                    const dirs = fs.readdirSync(mt5Base);
+                    for (const dir of dirs) {
+                      const directSync = path.join(mt5Base, dir, 'MQL5', 'Files', 'journal_sync.json');
+                      if (fs.existsSync(directSync)) {
+                        try {
+                          const fileContent = fs.readFileSync(directSync, 'utf-8');
+                          const parsed = JSON.parse(fileContent);
+                          if (String(parsed?.account?.login) === loginKey) {
+                            fs.writeFileSync(directSync, JSON.stringify({ account: null, openPositions: [], trades: [] }, null, 2), 'utf-8');
+                            terminalFileHashes[dir] = '';
+                          }
+                        } catch {}
+                      }
+                    }
+                  }
+                }
               } catch {}
             }
 
@@ -682,7 +938,8 @@ function mt5SyncPlugin(): Plugin {
               message: `Account #${loginKey} ${type === 'hard' ? 'permanently removed and all trades wiped' : 'soft removed (trade history safely preserved in journal)'}`,
               type,
               accounts: inMemoryStatus.accounts,
-              trades: inMemoryTrades
+              trades: inMemoryTrades,
+              removedAccounts: inMemoryStatus.removedAccounts
             }));
           } catch (err: any) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -697,7 +954,40 @@ function mt5SyncPlugin(): Plugin {
       }
 
       const cleanSymbolName = (sym: string): string => {
-        return String(sym || 'XAUUSD').replace(/(\.m|_m|ecn|#|c|m)$/i, '').toUpperCase().trim();
+        let s = String(sym || 'XAUUSD').trim();
+        s = s.replace(/#.*$/, '').replace(/(\.m|_m|\.ecn|_ecn|ecn)$/i, '').trim();
+        const upper = s.toUpperCase();
+        
+        if (upper === 'USTECC' || upper === 'USTEC' || upper === 'USTE' || upper === 'NAS100' || upper === 'US100') {
+          return 'USTEC';
+        }
+        if (upper === 'US30C' || upper === 'US30' || upper === 'DJ30') {
+          return 'US30';
+        }
+        if (upper === 'US500C' || upper === 'US500' || upper === 'SPX500') {
+          return 'US500';
+        }
+        if (upper === 'USOILC' || upper === 'USOIL' || upper === 'WTI') {
+          return 'USOIL';
+        }
+        if (upper === 'BTCUSDC' || upper === 'BTCUSD') {
+          return 'BTCUSD';
+        }
+        if (upper === 'ETHUSDC' || upper === 'ETHUSD') {
+          return 'ETHUSD';
+        }
+        if (upper === 'XAUUSDC' || upper === 'XAUUSD' || upper === 'GOLD') {
+          return 'XAUUSD';
+        }
+        if (upper === 'XAGUSDC' || upper === 'XAGUSD' || upper === 'SILVER') {
+          return 'XAGUSD';
+        }
+
+        if (s.length === 7 && /[cm]$/i.test(s)) {
+          return s.slice(0, 6).toUpperCase();
+        }
+
+        return upper;
       };
 
       const fetchMT5CandlesLive = (symbol: string, timeframe: string, fromSec: number, toSec: number, count: number = 50000) => {
@@ -787,10 +1077,30 @@ function mt5SyncPlugin(): Plugin {
 
             const file = path.resolve(candlesDir, `${symbol}_${timeframe}.json`);
             let savedCandles: any[] = [];
+
+            // If symbol is USTEC, also merge legacy USTE file if present
+            if (symbol === 'USTEC') {
+              const legacyFile = path.resolve(candlesDir, `USTE_${timeframe}.json`);
+              if (fs.existsSync(legacyFile)) {
+                try {
+                  const leg = JSON.parse(fs.readFileSync(legacyFile, 'utf-8'));
+                  if (Array.isArray(leg)) savedCandles.push(...leg);
+                } catch {}
+              }
+            }
+
             if (fs.existsSync(file)) {
               try {
-                savedCandles = JSON.parse(fs.readFileSync(file, 'utf-8'));
+                const cur = JSON.parse(fs.readFileSync(file, 'utf-8'));
+                if (Array.isArray(cur)) savedCandles.push(...cur);
               } catch {}
+            }
+
+            // Deduplicate savedCandles by unique time
+            if (savedCandles.length > 0) {
+              const m = new Map<number, any>();
+              savedCandles.forEach(c => m.set(c.time, c));
+              savedCandles = Array.from(m.values()).sort((a, b) => a.time - b.time);
             }
 
             const oldestSavedTime = savedCandles.length > 0 ? savedCandles[0].time : 0;
@@ -808,8 +1118,13 @@ function mt5SyncPlugin(): Plugin {
               '1w': 604800,
               '1mn': 2592000
             };
-            // Serve instantly from saved disk database if available
-            const needsFetch = forceFetch || (to > 0 && to <= oldestSavedTime) || savedCandles.length === 0;
+            const tfSeconds = tfSecondsMap[timeframe] || 300;
+            const isStale = newestSavedTime > 0 && (nowSec - newestSavedTime > Math.max(300, tfSeconds * 2));
+            const isBeyondRange = (from > 0 && from > newestSavedTime) || (to > 0 && to > newestSavedTime);
+            const isBeforeOldest = to > 0 && to <= oldestSavedTime;
+
+            // Return cached candles immediately without blocking unless explicitly forced or empty
+            const needsFetch = forceFetch || savedCandles.length === 0;
 
             if (needsFetch) {
               fetchMT5CandlesLive(symbol, timeframe, from, to, 50000);
@@ -1025,24 +1340,6 @@ function mt5SyncPlugin(): Plugin {
           res.end(JSON.stringify({ success: false, error: err.message }));
         }
       };
-
-      // Periodic multi-account background sync while Trading Journal dev server is active
-      // Automatically syncs whenever MT5 is open, and never forcefully launches MT5 if closed.
-      const bgSyncInterval = setInterval(() => {
-        if (isSyncInProgress) return;
-        isSyncInProgress = true;
-        const syncScript = path.resolve(__dirname, 'scripts', 'sync_mt5_account.py');
-        exec(`python "${syncScript}" --no-webhook`, { cwd: __dirname }, (error, stdout, stderr) => {
-          isSyncInProgress = false;
-          if (!error) {
-            try {
-              if (fs.existsSync(syncFile)) inMemoryTrades = JSON.parse(fs.readFileSync(syncFile, 'utf-8'));
-              if (fs.existsSync(statusFile)) inMemoryStatus = JSON.parse(fs.readFileSync(statusFile, 'utf-8'));
-            } catch {}
-          }
-        });
-      }, 5000);
-      server.httpServer?.on('close', () => clearInterval(bgSyncInterval));
 
       server.middlewares.use('/api/webhook/trade', handleWebhookReq);
       server.middlewares.use('/api/webhook/batch', handleWebhookReq);

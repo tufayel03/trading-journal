@@ -5,15 +5,32 @@ import { Trade, KPIStats, DailyPnL, MistakeSummary, SessionSummary, SymbolSummar
  */
 export function normalizeSymbol(symbol: string): string {
   if (!symbol) return 'OTHER';
-  let cleaned = symbol.trim().toUpperCase();
+  const s = symbol.trim().toUpperCase();
   
-  // Handle Gold variations
-  if (cleaned.includes('XAU') || cleaned.includes('GOLD')) {
+  if (s.startsWith('USTEC') || s === 'USTE' || s === 'NAS100' || s === 'US100') {
+    return 'USTEC';
+  }
+  if (s.startsWith('US30') || s === 'DJ30') {
+    return 'US30';
+  }
+  if (s.startsWith('US500') || s === 'SPX500') {
+    return 'US500';
+  }
+  if (s.startsWith('USOIL') || s === 'WTI') {
+    return 'USOIL';
+  }
+  if (s.includes('XAU') || s.includes('GOLD')) {
     return 'XAUUSD';
   }
+  if (s.includes('XAG') || s.includes('SILVER')) {
+    return 'XAGUSD';
+  }
 
-  // Remove common MetaTrader suffixes like 'm', '.m', '_m', 'ecn', '#', 'c'
-  cleaned = cleaned.replace(/(\.M|_M|ECN|#|C|m)$/i, '');
+  // Remove common MetaTrader broker suffixes (.M, _M, ECN, #)
+  let cleaned = s.replace(/#.*$/, '').replace(/(\.M|_M|ECN|\.ECN)$/i, '');
+  if (cleaned.length === 7 && cleaned.endsWith('C')) {
+    cleaned = cleaned.slice(0, 6);
+  }
   cleaned = cleaned.replace(/[^A-Z0-9]/g, '');
 
   return cleaned;

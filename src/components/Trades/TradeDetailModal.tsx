@@ -13,7 +13,8 @@ import {
   FileText,
   Upload,
   Maximize2,
-  Play
+  Play,
+  Layers
 } from 'lucide-react';
 import { Trade } from '../../types';
 
@@ -88,7 +89,7 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
                 <span className="text-xs text-gray-400 font-mono">#{trade.ticket || 'Manual'}</span>
               </div>
               <p className="text-xs text-gray-400">
-                Closed {new Date(trade.closeTime).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                Closed {new Date(trade.closeTime).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })} (NY)
               </p>
             </div>
           </div>
@@ -227,6 +228,40 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Partial Closes Breakdown */}
+              {trade.partialCloses && trade.partialCloses.length > 1 && (
+                <div className="bg-[#0B0F19] p-4 rounded-xl border border-indigo-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5" /> Partial Closures ({trade.partialCloses.length} Exits)
+                    </h4>
+                    <span className="text-[11px] font-mono text-gray-400">
+                      Total: {trade.lotSize} lots • Avg Exit: {trade.closePrice}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-[#1F2937] text-xs font-mono">
+                    <div className="grid grid-cols-4 pb-2 text-[10px] text-gray-400 font-semibold uppercase">
+                      <span>Exit Time</span>
+                      <span className="text-right">Price</span>
+                      <span className="text-right">Lots Closed</span>
+                      <span className="text-right">Profit</span>
+                    </div>
+                    {trade.partialCloses.map((pc, idx) => (
+                      <div key={idx} className="grid grid-cols-4 py-2 items-center text-gray-300">
+                        <span className="text-[11px] text-gray-400 truncate">
+                          {new Date(pc.closeTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                        <span className="text-right text-white font-medium">{pc.closePrice}</span>
+                        <span className="text-right text-gray-200">{pc.lotSize}</span>
+                        <span className={`text-right font-bold ${pc.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {pc.netProfit >= 0 ? '+' : ''}${pc.netProfit.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Journal Notes */}
               <div className="bg-[#0B0F19] p-4 rounded-xl border border-[#1F2937] space-y-2">

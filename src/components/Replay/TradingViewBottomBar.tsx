@@ -20,16 +20,18 @@ export const TradingViewBottomBar: React.FC<Props> = ({
 
   const ranges = ['1D', '5D', '1M', '3M', '6M', 'YTD', '1Y', '5Y', 'ALL'];
 
-  // Update live clock
+  // Update live clock (Default: America/New_York)
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      const tzOffsetHours = -now.getTimezoneOffset() / 60;
-      const tzStr = tzOffsetHours >= 0 ? `+${tzOffsetHours}` : `${tzOffsetHours}`;
-      setCurrentTimeStr(`${hours}:${minutes}:${seconds} (UTC${tzStr})`);
+      const nyTime = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(now);
+      setCurrentTimeStr(`${nyTime} (UTC-4 / New York)`);
     };
 
     updateTime();

@@ -43,7 +43,7 @@ TERMINAL_CONFIGS = [
             r"C:\Program Files\Five Percent Online MetaTrader 5\terminal64.exe",
         ],
         "default_servers": ["FivePercentOnline-Real"],
-        "known_accounts": [26573113]
+        "known_accounts": []
     },
     {
         "name": "Exness Multi-Account Terminal",
@@ -52,7 +52,7 @@ TERMINAL_CONFIGS = [
             r"C:\Program Files\Exness MetaTrader 5\terminal64.exe",
         ],
         "default_servers": ["Exness-MT5Real15", "Exness-MT5Real20", "Exness-MT5Real26"],
-        "known_accounts": [104675892, 160096169, 276133463]
+        "known_accounts": []
     },
     {
         "name": "ACG Markets MT5",
@@ -122,7 +122,23 @@ def format_iso(timestamp):
 
 def clean_symbol(sym):
     s = str(sym).strip().upper()
-    return re.sub(r'(\.M|_M|ECN|#|C|M)$', '', s, flags=re.IGNORECASE).upper()
+    if s.startswith("USTEC") or s == "USTE" or s == "NAS100" or s == "US100":
+        return "USTEC"
+    if s.startswith("US30") or s == "DJ30":
+        return "US30"
+    if s.startswith("US500") or s == "SPX500":
+        return "US500"
+    if s.startswith("USOIL") or s == "WTI":
+        return "USOIL"
+    if s.startswith("XAUUSD") or s == "GOLD":
+        return "XAUUSD"
+    if s.startswith("XAGUSD") or s == "SILVER":
+        return "XAGUSD"
+    s = re.sub(r'#.*$', '', s)
+    s = re.sub(r'(\.M|_M|ECN|\.ECN)$', '', s, flags=re.IGNORECASE).strip()
+    if len(s) == 7 and s.endswith('C'):
+        s = s[:6]
+    return s
 
 def extract_account_data(login_str, default_server=""):
     acc = mt5.account_info()
@@ -233,91 +249,130 @@ def extract_account_data(login_str, default_server=""):
             traded_symbols.add(d.symbol)
             traded_symbols.add(sym)
 
-    closed_trades_json = []
+    # Group OUT deals by position_id to consolidate partial closes into single positions
+    pos_out_deals = {}
     for d in deals:
         if d.entry == 1:  # DEAL_ENTRY_OUT (Close deal)
-            sym = clean_symbol(d.symbol)
-            close_price = round(float(d.price), 5)
-            close_time = d.time
-            raw_profit = round(float(d.profit), 2)
-            raw_commission = round(float(d.commission), 2)
-            raw_swap = round(float(d.swap), 2)
-            volume = round(float(d.volume), 2)
-            direction = "SELL" if d.type == 0 else "BUY"
+            pid = str(d.position_id) if getattr(d, 'position_id', 0) > 0 else str(d.ticket)
+            if pid not in pos_out_deals:
+                pos_out_deals[pid] = []
+            pos_out_deals[pid].append(d)
 
-            open_deal = pos_entry_map.get(d.position_id)
-            if open_deal:
-                open_price = round(float(open_deal.price), 5)
-                open_time = open_deal.time
-                direction = "BUY" if open_deal.type == 0 else "SELL"
+    closed_trades_json = []
+    for pid, p_deals in pos_out_deals.items():
+        # Sort deals chronologically
+        p_deals.sort(key=lambda x: getattr(x, 'time', 0))
+        d_last = p_deals[-1]
+        sym = clean_symbol(d_last.symbol)
+
+        total_volume = round(sum(float(getattr(x, 'volume', 0)) for x in p_deals), 2)
+        raw_profit = round(sum(float(getattr(x, 'profit', 0)) for x in p_deals), 2)
+        raw_commission = round(sum(float(getattr(x, 'commission', 0)) for x in p_deals), 2)
+        raw_swap = round(sum(float(getattr(x, 'swap', 0)) for x in p_deals), 2)
+
+        # Volume-weighted average close price
+        if total_volume > 0:
+            weighted_close_price = round(
+                sum(float(getattr(x, 'price', 0)) * float(getattr(x, 'volume', 0)) for x in p_deals) / total_volume,
+                5
+            )
+        else:
+            weighted_close_price = round(float(d_last.price), 5)
+
+        close_time = d_last.time
+        open_deal = pos_entry_map.get(getattr(d_last, 'position_id', 0))
+        if open_deal:
+            open_price = round(float(open_deal.price), 5)
+            open_time = open_deal.time
+            direction = "BUY" if open_deal.type == 0 else "SELL"
+        else:
+            open_price = weighted_close_price
+            open_time = p_deals[0].time - 60
+            direction = "SELL" if d_last.type == 0 else "BUY"
+
+        net_profit_usd = round((raw_profit + raw_commission + raw_swap) * rate, 4)
+
+        # Auto calculate pips based on open_price and volume-weighted close_price
+        pips = 0.0
+        if open_price and weighted_close_price:
+            diff = (weighted_close_price - open_price) if direction == 'BUY' else (open_price - weighted_close_price)
+            if 'XAU' in sym or 'GOLD' in sym:
+                pips = round(diff / 0.10, 1)
+            elif 'JPY' in sym:
+                pips = round(diff / 0.01, 1)
+            elif 'BTC' in sym or 'ETH' in sym:
+                pips = round(diff, 2)
+            elif open_price < 5:
+                pips = round(diff / 0.0001, 1)
             else:
-                open_price = close_price
-                open_time = close_time - 60
+                pips = round(diff, 2)
 
-            net_profit_usd = round((raw_profit + raw_commission + raw_swap) * rate, 4)
+        # Auto session detection
+        session = "NY_AM"
+        try:
+            dt_open = datetime.fromtimestamp(open_time, tz=timezone.utc)
+            h = dt_open.hour
+            if 0 <= h < 7: session = "ASIAN"
+            elif 7 <= h < 12: session = "LONDON_OPEN"
+            elif 12 <= h < 17: session = "NY_AM"
+            elif 17 <= h < 20: session = "NY_PM"
+            else: session = "LONDON_CLOSE"
+        except:
+            pass
 
-            # Auto calculate pips
-            pips = 0.0
-            if open_price and close_price:
-                diff = (close_price - open_price) if direction == 'BUY' else (open_price - close_price)
-                if 'XAU' in sym or 'GOLD' in sym:
-                    pips = round(diff / 0.10, 1)
-                elif 'JPY' in sym:
-                    pips = round(diff / 0.01, 1)
-                elif 'BTC' in sym or 'ETH' in sym:
-                    pips = round(diff, 2)
-                elif open_price < 5:
-                    pips = round(diff / 0.0001, 1)
-                else:
-                    pips = round(diff, 2)
-
-            # Auto session detection
-            session = "NY_AM"
-            try:
-                dt_open = datetime.fromtimestamp(open_time, tz=timezone.utc)
-                h = dt_open.hour
-                if 0 <= h < 7: session = "ASIAN"
-                elif 7 <= h < 12: session = "LONDON_OPEN"
-                elif 12 <= h < 17: session = "NY_AM"
-                elif 17 <= h < 20: session = "NY_PM"
-                else: session = "LONDON_CLOSE"
-            except:
-                pass
-
-            trade_obj = {
-                "id": f"mt5-{login}-{d.ticket}",
-                "ticket": str(d.ticket),
-                "positionId": str(d.position_id),
-                "symbol": sym,
-                "direction": direction,
-                "openPrice": open_price,
-                "closePrice": close_price,
-                "openTime": format_iso(open_time),
-                "closeTime": format_iso(close_time),
-                "profit": round(raw_profit * rate, 4),
-                "netProfit": net_profit_usd,
-                "nativeNetProfit": round(raw_profit + raw_commission + raw_swap, 2),
-                "lots": volume,
-                "lotSize": volume,
-                "pips": pips,
-                "commission": round(raw_commission * rate, 4),
-                "swap": round(raw_swap * rate, 4),
-                "nativeCommission": raw_commission,
-                "nativeSwap": raw_swap,
-                "session": session,
-                "strategy": "HyperTrade MT5 Auto Sync",
-                "confluences": ["MT5 Live Execution"],
-                "mistakes": [],
-                "emotions": "Disciplined",
-                "comment": d.comment or "",
-                "notes": f"Auto-synced from MT5 #{login}" if not d.comment else f"MT5 Deal #{d.ticket}: {d.comment}",
-                "accountLogin": login,
-                "accountServer": server,
-                "accountCurrency": currency,
-                "isCent": is_cent,
-                "status": "CLOSED"
+        partial_closes = [
+            {
+                "ticket": str(x.ticket),
+                "closeTime": format_iso(x.time),
+                "closePrice": round(float(x.price), 5),
+                "lotSize": round(float(x.volume), 2),
+                "netProfit": round(float(x.profit) * rate, 4)
             }
-            closed_trades_json.append(trade_obj)
+            for x in p_deals
+        ]
+
+        if len(p_deals) > 1:
+            comment_text = f"Partially closed in {len(p_deals)} exits"
+            notes_text = f"Auto-synced from MT5 #{login} (Partial close: {len(p_deals)} exits, avg close {weighted_close_price})"
+        else:
+            comment_text = d_last.comment or ""
+            notes_text = f"Auto-synced from MT5 #{login}" if not d_last.comment else f"MT5 Deal #{d_last.ticket}: {d_last.comment}"
+
+        trade_obj = {
+            "id": f"mt5-{login}-{pid}",
+            "ticket": str(pid),
+            "positionId": str(pid),
+            "symbol": sym,
+            "direction": direction,
+            "openPrice": open_price,
+            "closePrice": weighted_close_price,
+            "openTime": format_iso(open_time),
+            "closeTime": format_iso(close_time),
+            "profit": round(raw_profit * rate, 4),
+            "netProfit": net_profit_usd,
+            "nativeNetProfit": round(raw_profit + raw_commission + raw_swap, 2),
+            "lots": total_volume,
+            "lotSize": total_volume,
+            "pips": pips,
+            "commission": round(raw_commission * rate, 4),
+            "swap": round(raw_swap * rate, 4),
+            "nativeCommission": raw_commission,
+            "nativeSwap": raw_swap,
+            "session": session,
+            "strategy": "HyperTrade MT5 Auto Sync",
+            "confluences": ["MT5 Live Execution"],
+            "mistakes": [],
+            "emotions": "Disciplined",
+            "comment": comment_text,
+            "notes": notes_text,
+            "accountLogin": login,
+            "accountServer": server,
+            "accountCurrency": currency,
+            "isCent": is_cent,
+            "status": "CLOSED",
+            "partialCloses": partial_closes
+        }
+        closed_trades_json.append(trade_obj)
 
     # 3. Permanent Candle Vault Sync (Runs when --candles flag is passed or on demand)
     should_sync_candles = "--candles" in sys.argv

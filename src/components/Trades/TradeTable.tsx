@@ -502,7 +502,15 @@ export const TradeTable: React.FC<TradeTableProps> = ({
 
                       {/* Lot Size */}
                       <td className="py-3 text-center font-mono font-semibold text-gray-200">
-                        {t.lotSize}
+                        <div>{t.lotSize}</div>
+                        {t.partialCloses && t.partialCloses.length > 1 && (
+                          <span 
+                            title={`Partially closed in ${t.partialCloses.length} separate exits`} 
+                            className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                          >
+                            {t.partialCloses.length}x exit
+                          </span>
+                        )}
                       </td>
 
                       {/* Entry / Exit Price */}

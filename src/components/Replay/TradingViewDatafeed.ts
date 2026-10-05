@@ -97,7 +97,7 @@ export class TradingViewMT5Datafeed {
         description: `${cleanSym} (MT5 Broker Feed)`,
         type: cleanSym.includes('XAU') || cleanSym.includes('OIL') ? 'commodity' : cleanSym.includes('USD') || cleanSym.includes('EUR') ? 'forex' : 'index',
         session: '24x7',
-        timezone: 'Etc/UTC',
+        timezone: 'America/New_York',
         exchange: 'MT5 Direct',
         minmov: 1,
         pricescale: pricescale,
@@ -131,15 +131,18 @@ export class TradingViewMT5Datafeed {
         const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) {
-            allCandles = data.map((c: any) => ({
+          const rawCandles = Array.isArray(data)
+            ? data
+            : (Array.isArray(data?.candles) ? data.candles : []);
+          if (rawCandles.length > 0) {
+            allCandles = rawCandles.map((c: any) => ({
               time: Number(c.time),
               open: Number(c.open),
               high: Number(c.high),
               low: Number(c.low),
               close: Number(c.close),
               volume: Number(c.volume || c.tick_volume || 0)
-            })).sort((a, b) => a.time - b.time);
+            })).sort((a: any, b: any) => a.time - b.time);
             this.cachedBars.set(cacheKey, allCandles);
           }
         }

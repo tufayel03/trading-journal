@@ -110,7 +110,7 @@ export default function App() {
     fetch('/api/webhook/trade')
       .then(res => res.json())
       .then((serverTrades: Trade[]) => {
-        if (Array.isArray(serverTrades) && serverTrades.length > 0) {
+        if (Array.isArray(serverTrades)) {
           setTrades(serverTrades);
           saveTrades(serverTrades);
         }
@@ -163,72 +163,82 @@ export default function App() {
         if (resTrades.ok) {
           const syncedTrades: Trade[] = await resTrades.json();
           if (Array.isArray(syncedTrades)) {
-            setTrades(current => {
-              let changed = false;
-              // Clean current of any corrupted mock items
-              const cleanedCurrent = current.filter(t => 
-                t && t.id && 
-                !t.id.startsWith('trd-')
-              );
-              let merged = [...cleanedCurrent];
-
-              syncedTrades.forEach(st => {
-                const stTicket = st.ticket ? String(st.ticket).trim() : null;
-                const stId = st.id ? String(st.id).trim() : null;
-
-                const idx = merged.findIndex(t => 
-                  (stTicket && t.ticket && String(t.ticket).trim() === stTicket) || 
-                  (stId && t.id && String(t.id).trim() === stId)
-                );
-
-                if (idx >= 0) {
-                  const existing = merged[idx];
-                  const updated: Trade = {
-                    ...st,
-                    ...existing,
-                    openPrice: st.openPrice || existing.openPrice,
-                    closePrice: st.closePrice || existing.closePrice,
-                    netProfit: st.netProfit !== undefined ? st.netProfit : existing.netProfit,
-                    nativeNetProfit: st.nativeNetProfit !== undefined ? st.nativeNetProfit : existing.nativeNetProfit,
-                    lotSize: st.lotSize || existing.lotSize,
-                    pips: st.pips || existing.pips,
-                    commission: st.commission !== undefined ? st.commission : existing.commission,
-                    swap: st.swap !== undefined ? st.swap : existing.swap,
-                    closeTime: st.closeTime || existing.closeTime,
-                    accountLogin: st.accountLogin || existing.accountLogin,
-                    accountServer: st.accountServer || existing.accountServer,
-                    accountCurrency: st.accountCurrency || existing.accountCurrency,
-                    isCent: st.isCent !== undefined ? st.isCent : existing.isCent,
-                    // Retain user edits:
-                    mistakes: (existing.mistakes && existing.mistakes.length > 0) ? existing.mistakes : (st.mistakes || []),
-                    notes: existing.notes && !existing.notes.startsWith('Auto-synced') ? existing.notes : (st.notes || existing.notes),
-                    rating: existing.rating || st.rating,
-                    emotions: existing.emotions || st.emotions || 'Disciplined',
-                    strategy: existing.strategy && existing.strategy !== 'HyperTrade MT5 Auto Sync' ? existing.strategy : (st.strategy || existing.strategy),
-                    confluences: (existing.confluences && existing.confluences.length > 0) ? existing.confluences : (st.confluences || []),
-                    beforeChartUrl: existing.beforeChartUrl || st.beforeChartUrl,
-                    afterChartUrl: existing.afterChartUrl || st.afterChartUrl
-                  };
-
-                  if (JSON.stringify(merged[idx]) !== JSON.stringify(updated)) {
-                    merged[idx] = updated;
-                    changed = true;
-                  }
-                } else {
-                  merged.unshift(st);
-                  changed = true;
-                  setLiveSyncToast(`Auto-synced trade #${st.ticket || st.symbol} (${st.netProfit >= 0 ? '+' : ''}$${st.netProfit.toFixed(2)}) from MT5!`);
-                  setTimeout(() => setLiveSyncToast(null), 5000);
+            if (syncedTrades.length === 0) {
+              setTrades(current => {
+                const manual = current.filter(t => t.id && t.id.startsWith('manual-'));
+                if (current.length !== manual.length) {
+                  saveTrades(manual);
+                  return manual;
                 }
+                return current;
               });
+            } else {
+              setTrades(current => {
+                let changed = false;
+                // Clean current of any corrupted mock items
+                const cleanedCurrent = current.filter(t => 
+                  t && t.id && 
+                  !t.id.startsWith('trd-')
+                );
+                let merged = [...cleanedCurrent];
 
-              const deduped = deduplicateTrades(merged);
-              if (deduped.length !== current.length || changed) {
-                saveTrades(deduped);
-                return deduped;
-              }
-              return current;
-            });
+                syncedTrades.forEach(st => {
+                  const stTicket = st.ticket ? String(st.ticket).trim() : null;
+                  const stId = st.id ? String(st.id).trim() : null;
+
+                  const idx = merged.findIndex(t => 
+                    (stTicket && t.ticket && String(t.ticket).trim() === stTicket) || 
+                    (stId && t.id && String(t.id).trim() === stId)
+                  );
+
+                  if (idx >= 0) {
+                    const existing = merged[idx];
+                    const updated: Trade = {
+                      ...st,
+                      ...existing,
+                      openPrice: st.openPrice || existing.openPrice,
+                      closePrice: st.closePrice || existing.closePrice,
+                      netProfit: st.netProfit !== undefined ? st.netProfit : existing.netProfit,
+                      nativeNetProfit: st.nativeNetProfit !== undefined ? st.nativeNetProfit : existing.nativeNetProfit,
+                      lotSize: st.lotSize || existing.lotSize,
+                      pips: st.pips || existing.pips,
+                      commission: st.commission !== undefined ? st.commission : existing.commission,
+                      swap: st.swap !== undefined ? st.swap : existing.swap,
+                      closeTime: st.closeTime || existing.closeTime,
+                      accountLogin: st.accountLogin || existing.accountLogin,
+                      accountServer: st.accountServer || existing.accountServer,
+                      accountCurrency: st.accountCurrency || existing.accountCurrency,
+                      isCent: st.isCent !== undefined ? st.isCent : existing.isCent,
+                      mistakes: (existing.mistakes && existing.mistakes.length > 0) ? existing.mistakes : (st.mistakes || []),
+                      notes: existing.notes && !existing.notes.startsWith('Auto-synced') ? existing.notes : (st.notes || existing.notes),
+                      rating: existing.rating || st.rating,
+                      emotions: existing.emotions || st.emotions || 'Disciplined',
+                      strategy: existing.strategy && existing.strategy !== 'HyperTrade MT5 Auto Sync' ? existing.strategy : (st.strategy || existing.strategy),
+                      confluences: (existing.confluences && existing.confluences.length > 0) ? existing.confluences : (st.confluences || []),
+                      beforeChartUrl: existing.beforeChartUrl || st.beforeChartUrl,
+                      afterChartUrl: existing.afterChartUrl || st.afterChartUrl
+                    };
+
+                    if (JSON.stringify(merged[idx]) !== JSON.stringify(updated)) {
+                      merged[idx] = updated;
+                      changed = true;
+                    }
+                  } else {
+                    merged.unshift(st);
+                    changed = true;
+                    setLiveSyncToast(`Auto-synced trade #${st.ticket || st.symbol} (${st.netProfit >= 0 ? '+' : ''}$${st.netProfit.toFixed(2)}) from MT5!`);
+                    setTimeout(() => setLiveSyncToast(null), 5000);
+                  }
+                });
+
+                const deduped = deduplicateTrades(merged);
+                if (deduped.length !== current.length || changed) {
+                  saveTrades(deduped);
+                  return deduped;
+                }
+                return current;
+              });
+            }
           }
         }
 
@@ -236,36 +246,9 @@ export default function App() {
         const resStatus = await fetch('/api/webhook/status');
         if (resStatus.ok) {
           const statusData = await resStatus.json();
-          if (statusData.accounts && typeof statusData.accounts === 'object') {
-            setAccountsMap(prev => {
-              if (JSON.stringify(prev) !== JSON.stringify(statusData.accounts)) {
-                return statusData.accounts;
-              }
-              return prev;
-            });
-          }
-          if (statusData.account) {
-            setAccountStatus(prev => {
-              if (
-                !prev ||
-                prev.login !== statusData.account.login ||
-                prev.balance !== statusData.account.balance ||
-                prev.equity !== statusData.account.equity ||
-                prev.server !== statusData.account.server
-              ) {
-                return statusData.account;
-              }
-              return prev;
-            });
-          }
-          if (Array.isArray(statusData.openPositions)) {
-            setOpenPositions(prev => {
-              if (JSON.stringify(prev) !== JSON.stringify(statusData.openPositions)) {
-                return statusData.openPositions;
-              }
-              return prev;
-            });
-          }
+          setAccountsMap(statusData.accounts && typeof statusData.accounts === 'object' ? statusData.accounts : {});
+          setAccountStatus(statusData.account || null);
+          setOpenPositions(Array.isArray(statusData.openPositions) ? statusData.openPositions : []);
         }
       } catch {
         // Offline or dev server restart
@@ -544,6 +527,13 @@ export default function App() {
   const kpiStats = useMemo(() => {
     return calculateKPIStats(filteredTrades, startingCapital);
   }, [filteredTrades, startingCapital]);
+
+  // Is active account a Cent account?
+  const isCentAccount = useMemo(() => {
+    const activeAcc = (filters.account && filters.account !== 'ALL') ? filters.account : selectedAccount;
+    const target = accountsList.find(a => String(a.login) === String(activeAcc)) || accountStatus;
+    return Boolean(target?.isCent || target?.currency === 'USC');
+  }, [filters.account, selectedAccount, accountsList, accountStatus]);
 
   // Trade Actions
   const handleSaveTrade = (savedTrade: Trade) => {
@@ -861,7 +851,7 @@ export default function App() {
           {/* TAB 1: ANALYTICS DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6 animate-fadeIn">
-              <KPIOverview stats={kpiStats} />
+              <KPIOverview stats={kpiStats} isCent={isCentAccount} />
               
               {/* Side-by-Side: Equity Curve & Trading Calendar */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
@@ -882,7 +872,7 @@ export default function App() {
           {/* TAB 2: TRADE LOG TABLE */}
           {activeTab === 'trades' && (
             <div className="animate-fadeIn space-y-6">
-              <KPIOverview stats={kpiStats} />
+              <KPIOverview stats={kpiStats} isCent={isCentAccount} />
               <TradeTable
                 trades={filteredTrades}
                 openPositions={filteredOpenPositions}

@@ -15,9 +15,19 @@ export type TradeEmotion =
   | 'FOMO'
   | 'Neutral';
 
+export interface TradePartialClose {
+  ticket: string;
+  closeTime: string;
+  closePrice: number;
+  lotSize: number;
+  netProfit: number;
+}
+
 export interface Trade {
   id: string;
   ticket?: string;
+  positionId?: string;
+  partialCloses?: TradePartialClose[];
   symbol: string;
   direction: TradeDirection;
   openTime: string; // ISO string

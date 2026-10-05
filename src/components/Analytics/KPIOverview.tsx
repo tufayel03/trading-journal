@@ -14,10 +14,12 @@ import { KPIStats } from '../../types';
 
 interface KPIOverviewProps {
   stats: KPIStats;
+  isCent?: boolean;
 }
 
-export const KPIOverview: React.FC<KPIOverviewProps> = ({ stats }) => {
+export const KPIOverview: React.FC<KPIOverviewProps> = ({ stats, isCent }) => {
   const isNetPositive = stats.netProfit >= 0;
+  const centProfit = (stats.netProfit * 100).toFixed(2);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -25,9 +27,16 @@ export const KPIOverview: React.FC<KPIOverviewProps> = ({ stats }) => {
       {/* 1. Net P&L Card */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4 shadow-md hover:border-[var(--accent-gold)]/50 transition-all">
         <p className="text-xs text-[var(--text-secondary)] uppercase font-semibold">Total Net P&L</p>
-        <h2 className={`text-2xl font-extrabold tracking-tight mt-1 ${isNetPositive ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
-          {isNetPositive ? '+' : ''}${stats.netProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-        </h2>
+        <div className="flex items-baseline gap-2 mt-1 flex-wrap">
+          <h2 className={`text-2xl font-extrabold tracking-tight ${isNetPositive ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
+            {isNetPositive ? '+' : ''}${stats.netProfit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </h2>
+          {isCent && (
+            <span className="text-xs font-mono font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20" title="Native MT5 Cent Account (USC)">
+              {isNetPositive ? '+' : ''}{centProfit} USC
+            </span>
+          )}
+        </div>
         <p className={`text-[10px] mt-1 font-semibold ${stats.returnPercent >= 0 ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
           {stats.returnPercent >= 0 ? '+' : ''}{stats.returnPercent}% return on starting balance
         </p>

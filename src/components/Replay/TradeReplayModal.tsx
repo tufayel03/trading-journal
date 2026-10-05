@@ -151,10 +151,15 @@ export const TradeReplayModal: React.FC<Props> = ({
     }
     prevTradeIdRef.current = currentTradeId;
 
-    // Preserve exact replay timestamp when switching timeframes
-    const targetTimestamp = (isSameTrade && activeReplayTimestampRef.current)
-      ? activeReplayTimestampRef.current
-      : entrySec;
+    // By default, show the complete trade (at exit or entry) so execution arrows are visible
+    let targetTimestamp = closeSec || entrySec;
+    if (isSameTrade && activeReplayTimestampRef.current && activeReplayTimestampRef.current > 0) {
+      const minAllowed = entrySec - 86400 * 7;
+      const maxAllowed = Math.max(closeSec, entrySec) + 86400 * 7;
+      if (activeReplayTimestampRef.current >= minAllowed && activeReplayTimestampRef.current <= maxAllowed) {
+        targetTimestamp = activeReplayTimestampRef.current;
+      }
+    }
 
     // Request rich historical database with full depth (50,000+ bars cached)
     const url = `/api/candles?symbol=${encodeURIComponent(trade.symbol)}&timeframe=${timeframe}&all=true&force=${force}`;
@@ -179,10 +184,7 @@ export const TradeReplayModal: React.FC<Props> = ({
             targetIndex = targetIndex - 1;
           }
 
-          // If brand new trade modal opening, provide a slight pre-trade context lead-in
-          if (!isSameTrade) {
-            targetIndex = Math.max(0, targetIndex - 15);
-          } else if (activeReplayPriceRef.current && sorted[targetIndex]) {
+          if (isSameTrade && activeReplayPriceRef.current && sorted[targetIndex]) {
             // Dynamic intra-bar developing candle: sync forming candle's price to exact replay price
             const activePrice = activeReplayPriceRef.current;
             const currentBar = { ...sorted[targetIndex] };
@@ -419,10 +421,30 @@ export const TradeReplayModal: React.FC<Props> = ({
               <div className="flex-1 min-h-0 w-full relative">
                 <KLineReplayChart
                   trade={trade}
+                  candles={candles}
                   timeframe={timeframe}
                   theme={theme === 'dark' ? 'dark' : 'light'}
                   currentIndex={currentIndex}
                   onTimeframeChange={setTimeframe}
+                  isPlaying={isPlaying}
+                  speed={speed}
+                  onPlayToggle={() => setIsPlaying(p => !p)}
+                  onStepForward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
+                  }}
+                  onStepBackward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.max(0, prev - 1));
+                  }}
+                  onJumpToEntry={handleJumpToEntry}
+                  onJumpToExit={handleJumpToExit}
+                  onReset={handleJumpToEntry}
+                  onSpeedChange={setSpeed}
+                  onSeek={(index) => {
+                    setIsPlaying(false);
+                    setCurrentIndex(index);
+                  }}
                 />
               </div>
             ) : chartEngine === 'official_tv' ? (
@@ -469,40 +491,6 @@ export const TradeReplayModal: React.FC<Props> = ({
               isDarkTheme={theme === 'dark'}
             />
 
-            {/* Authentic TradingView Draggable Replay Bar */}
-            {candles.length > 0 && (
-              <TradingViewReplayBar
-                candles={candles}
-                currentIndex={currentIndex}
-                isPlaying={isPlaying}
-                speed={speed}
-                trade={trade}
-                onPlayToggle={() => setIsPlaying(p => !p)}
-                onStepForward={() => {
-                  setIsPlaying(false);
-                  setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
-                }}
-                onStepBackward={() => {
-                  setIsPlaying(false);
-                  setCurrentIndex(prev => Math.max(0, prev - 1));
-                }}
-                onJumpToEntry={handleJumpToEntry}
-                onJumpToExit={handleJumpToExit}
-                onReset={() => {
-                  setIsPlaying(false);
-                  const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);
-                  const entryIdx = candles.findIndex(c => c.time >= entrySec);
-                  setCurrentIndex(Math.max(0, entryIdx - 25));
-                }}
-                onSpeedChange={setSpeed}
-                onSeek={(index) => {
-                  setIsPlaying(false);
-                  setCurrentIndex(index);
-                }}
-                onClose={() => setIsPlaying(false)}
-                isDarkTheme={theme === 'dark'}
-              />
-            )}
 
           </div>
 

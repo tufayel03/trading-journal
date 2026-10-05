@@ -152,35 +152,82 @@ def get_available_symbols():
 
 
 def clean_symbol(symbol_name: str) -> str:
-    """Strips broker suffixes like .m, _m, ecn, #, etc. only from the end of the symbol name."""
+    """Strips broker suffixes like .m, _m, ecn, #, etc. only from the end of the symbol name without stripping root letters."""
     s = str(symbol_name).strip()
-    return re.sub(r'(\.m|_m|ecn|#|c|m)$', '', s, flags=re.IGNORECASE).upper()
+    s = re.sub(r'#.*$', '', s)
+    s = re.sub(r'(\.m|_m|\.ecn|_ecn|ecn)$', '', s, flags=re.IGNORECASE).strip()
+    upper = s.upper()
+
+    if upper in ["USTECC", "USTEC", "USTE", "NAS100", "US100"]:
+        return "USTEC"
+    if upper in ["US30C", "US30", "DJ30"]:
+        return "US30"
+    if upper in ["US500C", "US500", "SPX500"]:
+        return "US500"
+    if upper in ["USOILC", "USOIL", "WTI"]:
+        return "USOIL"
+    if upper in ["BTCUSDC", "BTCUSD"]:
+        return "BTCUSD"
+    if upper in ["ETHUSDC", "ETHUSD"]:
+        return "ETHUSD"
+    if upper in ["XAUUSDC", "XAUUSD", "GOLD"]:
+        return "XAUUSD"
+    if upper in ["XAGUSDC", "XAGUSD", "SILVER"]:
+        return "XAGUSD"
+
+    if len(s) == 7 and s[-1].lower() in ['c', 'm']:
+        return s[:6].upper()
+
+    return upper
 
 
 def find_mt5_symbol(symbol_name: str, available_symbols: list = None) -> str:
     """Matches a clean symbol with actual MT5 symbol name instantly."""
-    norm = clean_symbol(symbol_name)
+    s = str(symbol_name).strip()
+    if mt5.symbol_info(s) is not None:
+        mt5.symbol_select(s, True)
+        return s
+
+    norm = clean_symbol(s)
     candidates = [
-        symbol_name,
-        norm,
-        f"{norm}m",
-        f"{norm}.m",
-        f"{norm}#",
-        f"{norm}c",
-        f"{norm}ECN",
+        f"{norm}c",       # Exness Cent account: e.g. USTECc, EURUSDc, XAUUSDc
+        f"{norm}m",       # Exness Standard: e.g. USTECm, EURUSDm
+        norm,             # Exact base: e.g. USTEC, EURUSD
+        f"{norm}.m",      # Zero/Raw: e.g. USTEC.m
+        f"{norm}#",       # Indices: e.g. USTEC#
         f"{norm}_m",
-        f"{norm}ECN_m",
-        f"{norm}ECN.m",
+        f"{norm}ECN",
+        f"{norm}ECNc",
+        f"{norm}_x100",
+        f"{norm}_x100c",
     ]
-    if norm in ["USTE", "USTEC", "NAS100", "NQ", "US100"]:
-        candidates.extend(["USTEC_x100", "USTEC", "USTECm", "USTEC#", "NAS100", "US100"])
-    if norm in ["USOIL", "WTI", "OIL", "CRUDE"]:
-        candidates.extend(["USOIL", "USOILm", "USOIL.m", "USOIL#", "WTI"])
+    if norm == "USTEC":
+        candidates.extend(["USTECc", "USTEC", "USTECm", "USTEC#", "NAS100c", "NAS100", "US100c", "US100"])
+    elif norm == "US30":
+        candidates.extend(["US30c", "US30", "US30m", "DJ30c", "DJ30"])
+    elif norm == "US500":
+        candidates.extend(["US500c", "US500", "SPX500c", "SPX500"])
+    elif norm in ["USOIL", "WTI", "OIL", "CRUDE"]:
+        candidates.extend(["USOILc", "USOIL", "USOILm", "USOIL.m", "USOIL#", "WTIc", "WTI"])
+    elif norm in ["XAUUSD", "GOLD"]:
+        candidates.extend(["XAUUSDc", "XAUUSDm", "XAUUSD", "GOLDc", "GOLD"])
 
     for c in candidates:
         if mt5.symbol_info(c) is not None:
             mt5.symbol_select(c, True)
             return c
+
+    # Fallback search through all available symbols in terminal
+    try:
+        all_syms = mt5.symbols_get()
+        if all_syms:
+            for item in all_syms:
+                if clean_symbol(item.name) == norm or item.name.upper().startswith(norm):
+                    mt5.symbol_select(item.name, True)
+                    return item.name
+    except Exception:
+        pass
+
     return norm
 
 
@@ -193,7 +240,7 @@ def get_decimal_places(symbol: str) -> int:
         return 3
     if "BTC" in sym or "ETH" in sym or "USDT" in sym or "CRYPTO" in sym:
         return 2
-    if sym in ["META", "ORCL", "AAPL", "TSLA", "NVDA", "AMZN", "MSFT"]:
+    if sym in ["META", "ORCL", "AAPL", "TSLA", "NVDA", "AMZN", "MSFT", "USTEC", "US30", "US500"]:
         return 2
     return 5
 
@@ -251,13 +298,13 @@ def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_se
 
     # Case 1: User scrolled back to an older historical point (to_sec specified)
     if to_sec > 0 and from_sec == 0:
-        dt_to = datetime.fromtimestamp(to_sec, tz=timezone.utc)
+        dt_to = datetime.fromtimestamp(to_sec)
         rates = mt5.copy_rates_from(matched_sym, mt5_tf, dt_to, count)
 
-    # Case 2: Range specified (from_sec and to_sec)
+    # Case 2: Range specified (from_sec and to_sec) - Use naive datetime for MT5 API
     if (rates is None or len(rates) == 0) and from_sec > 0 and to_sec > 0:
-        dt_from = datetime.fromtimestamp(max(0, from_sec - tf_sec * 500), tz=timezone.utc)
-        dt_to = datetime.fromtimestamp(to_sec + tf_sec * 500, tz=timezone.utc)
+        dt_from = datetime.fromtimestamp(max(0, from_sec - tf_sec * 500))
+        dt_to = datetime.fromtimestamp(to_sec + tf_sec * 500)
         rates = mt5.copy_rates_range(matched_sym, mt5_tf, dt_from, dt_to)
 
     # Case 3: Fetch latest maximum depth (50,000 bars)
@@ -265,24 +312,36 @@ def fetch_and_save_candles(symbol: str, timeframe_str: str, from_sec: int, to_se
         rates = mt5.copy_rates_from_pos(matched_sym, mt5_tf, 0, count)
 
     if rates is None or len(rates) == 0:
-        # Fallback to copy_rates_from with current time
-        dt_now = datetime.now(timezone.utc)
+        # Fallback to copy_rates_from with current local time
+        dt_now = datetime.now()
         rates = mt5.copy_rates_from(matched_sym, mt5_tf, dt_now, count)
 
-    if rates is None or len(rates) == 0:
-        return []
-
-    new_candles = [format_candle(r, decimals) for r in rates]
+    new_candles = [format_candle(r, decimals) for r in rates] if rates is not None and len(rates) > 0 else []
 
     # Merge with existing file in disk database (Preserve All Past History Forever)
     os.makedirs(CANDLES_DIR, exist_ok=True)
     target_file = os.path.join(CANDLES_DIR, f"{norm_sym}_{tf_key}.json")
 
     existing_candles = []
+    # If norm_sym is USTEC, also merge legacy USTE_{tf_key}.json if present
+    legacy_file = os.path.join(CANDLES_DIR, f"USTE_{tf_key}.json") if norm_sym == "USTEC" else None
+    if legacy_file and os.path.exists(legacy_file):
+        try:
+            with open(legacy_file, "r", encoding="utf-8") as f:
+                legacy_data = json.load(f)
+                if isinstance(legacy_data, list):
+                    existing_candles.extend(legacy_data)
+        except Exception:
+            pass
+
     if os.path.exists(target_file):
         try:
             with open(target_file, "r", encoding="utf-8") as f:
-                existing_candles = json.load(f)
+                target_data = json.load(f)
+                if isinstance(target_data, list):
+                    existing_candles.extend(target_data)
+        except Exception:
+            pass
         except Exception:
             existing_candles = []
 
