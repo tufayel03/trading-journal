@@ -8,11 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "postinstall": "python scripts/patch_pinets.py"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@klinecharts/pro": "^0.1.1",
+    "@luxalgo/vela": "^0.8.2",
+    "@luxalgo/vela-pinets": "^0.2.15",
     "@tailwindcss/vite": "^4.1.14",
     "@types/papaparse": "^5.5.2",
     "@vitejs/plugin-react": "^5.0.4",
@@ -23,6 +26,7 @@
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "papaparse": "^5.5.4",
+    "pinets": "^0.11.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",

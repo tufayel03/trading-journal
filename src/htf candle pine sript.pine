@@ -1,0 +1,152 @@
+//@version=5
+indicator("HTF Candle Overlay", overlay=true, dynamic_requests=true)
+
+// User inputs
+htf1_enabled = input.bool(true, "Enable HTF", group="Timeframe")
+htf1_input = input.timeframe("D", "Timeframe", options=["1", "3", "5", "15", "30", "60", "90", "120", "240", "360", "420", "D", "W", "M"], group="Timeframe")
+htf1_numCandles = input.int(3, "Number of Candles", minval=1, maxval=3, group="Timeframe")
+htf1_candleWidth = input.int(5, "Candle Width", minval=1, maxval=15, group="Timeframe")
+htf1_bullColor = input.color(color.white, "Bullish Candle", group="Timeframe")
+htf1_bearColor = input.color(color.gray, "Bearish Candle", group="Timeframe")
+htf1_wickColor = input.color(color.black, "Wick Color", group="Timeframe")
+htf1_borderColor = input.color(color.black, "Border Color", group="Timeframe")
+htf1_labelColor = input.color(color.white, "Label Color", group="Timeframe")
+
+// Common settings
+spacingBars = input.int(3, "Spacing From Current Price (bars)", minval=1, group="General")
+showLabels = input.bool(true, "Show HTF Labels", group="General")
+showTimeRemaining = input.bool(true, "Show Time Remaining in Label", group="General")
+labelSize = input.string("normal", "Label Size", options=["tiny", "small", "normal", "large"], group="General")
+show50PctLevel = input.bool(true, "Show 50% Level of Previous Candle", group="General")
+pctLevelColor = input.color(color.yellow, "50% Level Color", group="General")
+pctLevelStyle = input.string("dotted", "50% Level Style", options=["solid", "dotted", "dashed"], group="General")
+pctLevelWidth = input.int(1, "50% Level Width", minval=1, maxval=4, group="General")
+
+var labelSizeOption = size.normal
+if labelSize == "tiny"
+    labelSizeOption := size.tiny
+else if labelSize == "small"
+    labelSizeOption := size.small
+else if labelSize == "large"
+    labelSizeOption := size.large
+
+var lineStyleOption = line.style_dotted
+if pctLevelStyle == "solid"
+    lineStyleOption := line.style_solid
+else if pctLevelStyle == "dashed"
+    lineStyleOption := line.style_dashed
+
+currentTF = timeframe.period
+
+var htf1_bodies = array.new<box>()
+var htf1_wicks = array.new<line>()
+var htf1_labels = array.new<label>()
+var htf1_midlines = array.new<line>()
+
+clearDrawings() =>
+    while array.size(htf1_bodies) > 0
+        box.delete(array.pop(htf1_bodies))
+    while array.size(htf1_wicks) > 0
+        line.delete(array.pop(htf1_wicks))
+    while array.size(htf1_labels) > 0
+        label.delete(array.pop(htf1_labels))
+    while array.size(htf1_midlines) > 0
+        line.delete(array.pop(htf1_midlines))
+
+formatTimeRemaining(ms) =>
+    sec = math.round(ms / 1000)
+    min = math.floor(sec / 60)
+    hr = math.floor(min / 60)
+    day = math.floor(hr / 24)
+    remainingMin = min % 60
+    remainingHr = hr % 24
+    minStr = str.tostring(remainingMin)
+    hrStr = str.tostring(remainingHr)
+    dayStr = str.tostring(day)
+    if remainingMin < 10 and hr > 0
+        minStr := "0" + minStr
+    day > 0 ? dayStr + "d " + hrStr + "h " + minStr + "m" : hr > 0 ? hrStr + "h " + minStr + "m" : min > 0 ? minStr + "m" : "< 1m"
+
+// Top-level scalar securities (3 candles: Today, Yesterday, 2 Days Ago)
+h1_o0 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, open, lookahead=barmerge.lookahead_on) : na
+h1_h0 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, high, lookahead=barmerge.lookahead_on) : na
+h1_l0 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, low, lookahead=barmerge.lookahead_on) : na
+h1_c0 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, close, lookahead=barmerge.lookahead_on) : na
+
+h1_o1 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, open[1], lookahead=barmerge.lookahead_on) : na
+h1_h1 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, high[1], lookahead=barmerge.lookahead_on) : na
+h1_l1 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, low[1], lookahead=barmerge.lookahead_on) : na
+h1_c1 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, close[1], lookahead=barmerge.lookahead_on) : na
+
+h1_o2 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, open[2], lookahead=barmerge.lookahead_on) : na
+h1_h2 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, high[2], lookahead=barmerge.lookahead_on) : na
+h1_l2 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, low[2], lookahead=barmerge.lookahead_on) : na
+h1_c2 = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, close[2], lookahead=barmerge.lookahead_on) : na
+
+h1_nextClose = htf1_enabled ? request.security(syminfo.tickerid, htf1_input, time_close, lookahead=barmerge.lookahead_on) : na
+
+if barstate.islast
+    clearDrawings()
+    baseOffset = bar_index + spacingBars
+    currentPrice = close
+
+    if htf1_enabled and htf1_input != currentTF and not na(h1_o0)
+        startIdx = math.max(0, 3 - htf1_numCandles)
+        for i = startIdx to 2
+            candleX = baseOffset + (i - startIdx) * htf1_candleWidth
+            o = i == 0 ? h1_o2 : i == 1 ? h1_o1 : h1_o0
+            h = i == 0 ? h1_h2 : i == 1 ? h1_h1 : h1_h0
+            l = i == 0 ? h1_l2 : i == 1 ? h1_l1 : h1_l0
+            c = i == 0 ? h1_c2 : i == 1 ? h1_c1 : h1_c0
+
+            if not na(o)
+                candleColor = c >= o ? htf1_bullColor : htf1_bearColor
+                b = box.new(
+                    left=candleX - math.floor(htf1_candleWidth / 2),
+                    top=math.max(o, c),
+                    right=candleX + math.floor(htf1_candleWidth / 2),
+                    bottom=math.min(o, c),
+                    border_color=htf1_borderColor,
+                    border_width=1,
+                    bgcolor=candleColor,
+                    xloc=xloc.bar_index
+                )
+                array.push(htf1_bodies, b)
+
+                w1 = line.new(x1=candleX, y1=h, x2=candleX, y2=math.max(o, c), color=htf1_wickColor, width=1, xloc=xloc.bar_index)
+                w2 = line.new(x1=candleX, y1=l, x2=candleX, y2=math.min(o, c), color=htf1_wickColor, width=1, xloc=xloc.bar_index)
+                array.push(htf1_wicks, w1)
+                array.push(htf1_wicks, w2)
+
+                if i > startIdx and show50PctLevel
+                    prevH = i == 1 ? h1_h2 : h1_h1
+                    prevL = i == 1 ? h1_l2 : h1_l1
+                    if not na(prevH) and not na(prevL)
+                        midPrice = prevL + (prevH - prevL) * 0.5
+                        prevCandleX = baseOffset + (i - 1 - startIdx) * htf1_candleWidth
+                        midLine = line.new(
+                            x1=prevCandleX - math.floor(htf1_candleWidth / 2) - 1,
+                            y1=midPrice,
+                            x2=prevCandleX + math.floor(htf1_candleWidth / 2) + 1,
+                            y2=midPrice,
+                            color=pctLevelColor,
+                            width=pctLevelWidth,
+                            style=lineStyleOption,
+                            xloc=xloc.bar_index
+                        )
+                        array.push(htf1_midlines, midLine)
+
+                if i == 2 and showLabels
+                    labelText = htf1_input
+                    if showTimeRemaining and time < h1_nextClose and h1_nextClose > 0
+                        labelText := labelText + " [" + formatTimeRemaining(h1_nextClose - time) + "]"
+                    lbl = label.new(
+                        x=candleX + math.floor(htf1_candleWidth / 2) + 2,
+                        y=currentPrice,
+                        text=labelText,
+                        color=color.new(color.black, 100),
+                        style=label.style_label_left,
+                        textcolor=htf1_labelColor,
+                        size=labelSizeOption
+                    )
+                    array.push(htf1_labels, lbl)

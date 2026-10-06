@@ -28,7 +28,7 @@ interface Props {
   onSelectTrade?: (trade: Trade) => void;
   onRefreshCandles?: () => void;
   isSyncingCandles?: boolean;
-  chartEngine?: 'kline' | 'standard' | 'official_tv';
+  chartEngine?: 'kline' | 'vela' | 'standard' | 'official_tv';
   onCycleEngine?: () => void;
 }
 
@@ -109,14 +109,16 @@ export const TradingViewTopBar: React.FC<Props> = ({
 
         <div className={`w-[1px] h-4 mx-1 ${isDarkTheme ? 'bg-[#2A2E39]' : 'bg-[#E0E3EB]'}`} />
 
-        {/* Engine Switcher (KLine Pro Zero-Lag / Standard / Official TV) */}
+        {/* Engine Switcher (KLine Pro Zero-Lag / Vela PineTS / Standard / Official TV) */}
         {onCycleEngine && (
           <button
             onClick={onCycleEngine}
-            title="Switch Chart Engine (KLine Pro Canvas / Standard / Official TV)"
+            title="Switch Chart Engine (KLine Pro / Vela PineTS / Standard / Official TV)"
             className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
               chartEngine === 'kline'
                 ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
+                : chartEngine === 'vela'
+                ? 'bg-purple-600/20 text-purple-300 border-purple-500/40 hover:bg-purple-600/30'
                 : chartEngine === 'official_tv'
                 ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30'
                 : isDarkTheme
@@ -126,11 +128,21 @@ export const TradingViewTopBar: React.FC<Props> = ({
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                chartEngine === 'kline' ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'
+                chartEngine === 'kline'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : chartEngine === 'vela'
+                  ? 'bg-purple-400 animate-pulse'
+                  : 'bg-blue-400'
               }`}
             />
             <span>
-              {chartEngine === 'kline' ? 'KLine Pro' : chartEngine === 'official_tv' ? 'TradingView TV' : 'Standard'}
+              {chartEngine === 'kline'
+                ? 'KLine Pro'
+                : chartEngine === 'vela'
+                ? 'Vela (PineTS)'
+                : chartEngine === 'official_tv'
+                ? 'TradingView TV'
+                : 'Standard'}
             </span>
           </button>
         )}

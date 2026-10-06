@@ -34,8 +34,9 @@ import { TradingViewReplayBar } from './TradingViewReplayBar';
 import { TradingViewRightDock } from './TradingViewRightDock';
 import { OfficialTradingViewChart, OfficialTradingViewChartRef } from './OfficialTradingViewChart';
 import { KLineReplayChart } from './KLineReplayChart';
+import { VelaReplayChart } from './VelaReplayChart';
 
-type ChartEngine = 'kline' | 'standard' | 'official_tv';
+type ChartEngine = 'kline' | 'vela' | 'standard' | 'official_tv';
 
 interface Props {
   isOpen: boolean;
@@ -69,7 +70,7 @@ export const TradeReplayModal: React.FC<Props> = ({
   
   const [chartEngine, setChartEngine] = useState<ChartEngine>(() => {
     const saved = localStorage.getItem('replay_chart_engine') as ChartEngine | null;
-    if (saved === 'standard' || saved === 'official_tv' || saved === 'kline') return saved;
+    if (saved === 'standard' || saved === 'official_tv' || saved === 'kline' || saved === 'vela') return saved;
     return 'kline'; // Default to KLineChart Pro!
   });
 
@@ -78,7 +79,8 @@ export const TradeReplayModal: React.FC<Props> = ({
   const handleCycleEngine = () => {
     setChartEngine(prev => {
       let next: ChartEngine = 'kline';
-      if (prev === 'kline') next = 'standard';
+      if (prev === 'kline') next = 'vela';
+      else if (prev === 'vela') next = 'standard';
       else if (prev === 'standard') next = 'official_tv';
       else if (prev === 'official_tv') next = 'kline';
       localStorage.setItem('replay_chart_engine', next);
@@ -420,6 +422,36 @@ export const TradeReplayModal: React.FC<Props> = ({
             {chartEngine === 'kline' ? (
               <div className="flex-1 min-h-0 w-full relative">
                 <KLineReplayChart
+                  trade={trade}
+                  candles={candles}
+                  timeframe={timeframe}
+                  theme={theme === 'dark' ? 'dark' : 'light'}
+                  currentIndex={currentIndex}
+                  onTimeframeChange={setTimeframe}
+                  isPlaying={isPlaying}
+                  speed={speed}
+                  onPlayToggle={() => setIsPlaying(p => !p)}
+                  onStepForward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
+                  }}
+                  onStepBackward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.max(0, prev - 1));
+                  }}
+                  onJumpToEntry={handleJumpToEntry}
+                  onJumpToExit={handleJumpToExit}
+                  onReset={handleJumpToEntry}
+                  onSpeedChange={setSpeed}
+                  onSeek={(index) => {
+                    setIsPlaying(false);
+                    setCurrentIndex(index);
+                  }}
+                />
+              </div>
+            ) : chartEngine === 'vela' ? (
+              <div className="flex-1 min-h-0 w-full relative">
+                <VelaReplayChart
                   trade={trade}
                   candles={candles}
                   timeframe={timeframe}

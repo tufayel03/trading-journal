@@ -13,7 +13,7 @@ export function loadTrades(): Trade[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      const valid = parsed.filter((t: any) => 
+      const valid = parsed.filter((t: any) =>
         t && typeof t === 'object' && t.id &&
         !t.id.startsWith('trd-') &&
         !t.notes?.includes('Live Auto-Sync Verification Test Trade')
