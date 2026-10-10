@@ -135,7 +135,7 @@ export const TradingViewReplayBar: React.FC<Props> = ({
           ? { left: `${position.x}px`, top: `${position.y}px` }
           : { bottom: '38px', left: '50%', transform: 'translateX(-50%)' }
       }
-      className={`fixed z-30 flex items-center gap-2 px-3 py-1.5 rounded-xl shadow-2xl border backdrop-blur-md select-none transition-all ${
+      className={`fixed z-[100000] flex items-center gap-2 px-3 py-1.5 rounded-xl shadow-2xl border backdrop-blur-md select-none transition-all ${
         isDarkTheme
           ? 'bg-[#1E222D]/95 border-[#2A2E39] text-[#D1D4DC]'
           : 'bg-[#FFFFFF]/95 border-[#E0E3EB] text-[#131722]'

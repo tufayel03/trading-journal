@@ -1,0 +1,1125 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © LuxAlgo - Enhanced by Antigravity
+//@version=6
+
+indicator("Session Sweeps Enhanced [LuxAlgo]", "Sweeps", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+
+//------------------------------------------------------------------------------
+// Settings
+//-----------------------------------------------------------------------------{
+
+// Session Sweeps Group
+swpGR = 'Session Sweeps'
+swpFilterMode = input.string("Last 2 Days", "Show Sweeps For", options = ["Last 2 Days", "Only Today", "All Time"], group = swpGR, tooltip = "Last 2 Days (Default): Shows sweep markers (LH$, LL$, AH$, AL$, NAH$, NAL$, NPH$, NPL$, PDH$, PDL$, etc.) and sweep zones for the last 2 trading sessions (Today + Yesterday). Keeps older charts clean.\n\nOnly Today: Shows sweeps only for today's active session.\n\nAll Time: Displays all sweeps across past weeks/months for backtesting.")
+swpBZ = input.bool (false, 'Buyside Sweep Zones', inline = 'SWPB', group = swpGR, tooltip = 'Draws sweep zone box on breached high. Disabled by default to keep chart clean and avoid boxes outside candles.')
+swpBC = input.color(color.new(color.orange, 37), '', inline = 'SWPB', group = swpGR)
+swpBM = input.float(1.3, 'Margin', minval = .5, maxval = 10, step = .1, inline = 'SWPB', group = swpGR)
+
+swpSZ = input.bool (false, 'Sellside Sweep Zones', inline = 'SWPS', group = swpGR, tooltip = 'Draws sweep zone box on breached low. Disabled by default to keep chart clean and avoid boxes outside candles.')
+swpSC = input.color(color.new(color.blue, 37), '', inline = 'SWPS', group = swpGR)
+swpSM = input.float(1.3, 'Margin', minval = .5, maxval = 10, step = .1, inline = 'SWPS', group = swpGR)
+
+swpML = input.int(5, '  Sweep Margin Length', minval = 2, maxval = 10, group = swpGR)
+swpDT = input.bool(false, 'Detect Sweeps Once per Session', group = swpGR)
+
+swpHF = input.bool(false, 'Hide Fake Sweep Zones', inline = 'SWPF', group = swpGR)
+swpFC = input.color(color.new(#787b86, 73), '', inline = 'SWPF', group = swpGR)
+
+// Sweep Marker & Line Style Settings
+swpUseSesCol    = input.bool(true, 'Use Target Session Color for Sweep Zones & Signs', group = swpGR, tooltip = 'When enabled, the sweep zone box and the marker use the color of the session that was swept.')
+swpShowLowSign  = input.bool(true, 'Show Sign on Low Sweep', inline = 'SGN1', group = swpGR)
+swpShowHighSign = input.bool(true, 'Show Sign on High Sweep', inline = 'SGN1', group = swpGR)
+swpSignText     = input.string('$', 'Sweep Marker Symbol', inline = 'SGN2', group = swpGR)
+swpSignSize     = input.string('Normal', 'Marker Size', options = ['Tiny', 'Small', 'Normal', 'Large'], inline = 'SGN2', group = swpGR)
+swpLineStyle    = input.string('Solid', 'Unswept Line Style', options = ['Solid', 'Dotted'], inline = 'LNS1', group = swpGR)
+swpSweptStyle   = input.string('Dashed', 'Swept Line Style', options = ['Dashed', 'Dotted', 'Solid'], inline = 'LNS1', group = swpGR)
+
+// Timeframe Visibility Filter (Requirement 3)
+tfGR = "Timeframe Visibility (Checkboxes up to H4)"
+tf1  = input.bool(true,  "1m",  inline = "TF1", group = tfGR)
+tf3  = input.bool(true,  "3m",  inline = "TF1", group = tfGR)
+tf5  = input.bool(true,  "5m",  inline = "TF1", group = tfGR)
+tf15 = input.bool(true,  "15m", inline = "TF2", group = tfGR)
+tf30 = input.bool(true,  "30m", inline = "TF2", group = tfGR)
+tf60 = input.bool(true,  "1h",  inline = "TF2", group = tfGR)
+tf120= input.bool(false, "2h",  inline = "TF3", group = tfGR)
+tf240= input.bool(true,  "4h",  inline = "TF3", group = tfGR)
+tfAllIntra = input.bool(false, "Allow all intraday <= 4H", inline = "TF3", group = tfGR)
+
+// Sessions Configuration (Requirement 1 - Minute precision supported like 09:30)
+sesGR   = "Sessions"
+nyProfile   = input.string("Option 1 (NQ)", "Active NY AM Profile", options = ["Option 1 (NQ)", "Option 2 (Forex / Gold)"], group = sesGR, tooltip = "Manually choose which NY AM setting to apply: Option 1 or Option 2.")
+
+ny1_srt     = input.string("09:30", "Option 1 (NQ) Start", inline = "NY1", group = sesGR, tooltip = "Start time for Option 1 (format HH:MM, e.g. 09:30, 08:30).")
+ny1_end     = input.string("12:00", "End", inline = "NY1", group = sesGR, tooltip = "End time for Option 1 (format HH:MM, e.g. 12:00, 13:00).")
+
+ny2_srt     = input.string("08:00", "Option 2 (Forex/Gold) Start", inline = "NY2", group = sesGR, tooltip = "Start time for Option 2 (format HH:MM, e.g. 08:00, 07:00).")
+ny2_end     = input.string("12:00", "End", inline = "NY2", group = sesGR, tooltip = "End time for Option 2 (format HH:MM, e.g. 12:00, 11:30).")
+
+sesOverlap = input.bool(false, "Session Overlap", group = sesGR, tooltip = "When OFF (default), newer sessions (e.g. New York) automatically cut off prior sessions (e.g. London). This prevents London's background fill and lines from appearing inside the New York session.")
+
+tzMode     = input.string("Auto Market Timezone (Recommended)", "Timezone Mode", options = ["Auto Market Timezone (Recommended)", "Manual UTC Offset"], group = sesGR, tooltip = "Auto: Automatically aligns NY AM/PM with 'America/New_York', London with 'Europe/London', and Asia with 'Asia/Tokyo'. Automatically adjusts for Daylight Saving Time (EDT/EST, BST/GMT) so setting 07:00 always starts at exactly 07:00 on your chart!\n\nManual: Uses the manual UTC Offset and DST options below.")
+isAutoTz   = tzMode == "Auto Market Timezone (Recommended)"
+
+// Sweep Display Filter (Last 2 Days vs Only Today vs All Time for Backtesting)
+isAllTime      = swpFilterMode == "All Time"
+isOnlyToday    = swpFilterMode == "Only Today"
+calcTz         = isAutoTz ? "America/New_York" : (tzMode == "Manual UTC Offset" ? "Etc/UTC" : syminfo.timezone)
+
+lastTimeVal    = nz(last_bar_time, timenow)
+lastY          = year(lastTimeVal, calcTz)
+lastM          = month(lastTimeVal, calcTz)
+lastD          = dayofmonth(lastTimeVal, calcTz)
+lastDow        = dayofweek(lastTimeVal, calcTz)
+
+todayMidnight  = timestamp(calcTz, lastY, lastM, lastD, 0, 0, 0)
+daysBack       = lastDow == dayofweek.monday ? 3 : (lastDow == dayofweek.sunday ? 2 : 1)
+twoDaysCutoff  = todayMidnight - daysBack * 86400000
+
+allowSweepPlot = isAllTime ? true : (isOnlyToday ? time >= todayMidnight : time >= twoDaysCutoff)
+
+asSH    = input.bool(true , '', inline='AS' , group = sesGR)
+asST    = input.string('Asia' , '', inline='AS' , group = sesGR)
+asSRT   = input.string('09:00', 'Start', inline='AS', group = sesGR, tooltip = 'Format HH:MM (e.g. 09:30, 09:00)')
+asEND   = input.string('18:00', 'End', inline='AS', group = sesGR, tooltip = 'Format HH:MM (e.g. 18:00, 15:30)')
+asTZ_O  = input.int(9, 'UTC Offset', inline='AS_TZ', group = sesGR)
+asC     = input.color(color.new(#FFD700, 0), '  ', inline='AS1', group = sesGR)
+asMMP   = input.bool(true, 'Extend : Max/Min | Mid', inline = 'AS1', group = sesGR)
+asSM    = input.bool(false , '', inline = 'AS1', group = sesGR)
+asBG    = input.bool(true, 'Fill', inline = 'AS1', group = sesGR)
+
+ldnSH   = input.bool(true , ''  , inline='LDN' , group = sesGR)
+ldnST   = input.string('London' , '', inline='LDN' , group = sesGR)
+ldnSRT  = input.string('08:00', 'Start', inline='LDN', group = sesGR, tooltip = 'Format HH:MM (e.g. 08:00, 07:30)')
+ldnEND  = input.string('17:00', 'End', inline='LDN', group = sesGR, tooltip = 'Format HH:MM (e.g. 17:00, 16:30)')
+ldnTZ_O = input.int(0, 'UTC Offset', inline='LDN_TZ', group = sesGR)
+ldnC    = input.color(color.new(#2962FF, 0), '  ', inline='LDN1', group = sesGR)
+ldnMMP  = input.bool(true, 'Extend : Max/Min | Mid', inline = 'LDN1', group = sesGR)
+ldnSM   = input.bool(false , '', inline = 'LDN1', group = sesGR)
+ldnBG   = input.bool(true, 'Fill', inline = 'LDN1', group = sesGR)
+
+nyamSH  = input.bool(true , ''  , inline='NYA' , group = sesGR)
+nyamST  = input.string('NY AM' , '', inline='NYA' , group = sesGR)
+nyamTZ_O= input.int(-5, 'UTC Offset', inline='NYA_TZ', group = sesGR)
+nyamC   = input.color(color.new(#FF6D00, 0), '  ', inline='NYA1', group = sesGR)
+nyamMMP = input.bool(true, 'Extend : Max/Min | Mid', inline = 'NYA1', group = sesGR)
+nyamSM  = input.bool(false , '', inline = 'NYA1', group = sesGR)
+nyamBG  = input.bool(true, 'Fill', inline = 'NYA1', group = sesGR)
+
+nypmSH  = input.bool(true , ''  , inline='NYP' , group = sesGR)
+nypmST  = input.string('NY PM' , '', inline='NYP' , group = sesGR)
+nypmSRT = input.string('13:00', 'Start', inline='NYP', group = sesGR, tooltip = 'Format HH:MM (e.g. 13:00, 13:30)')
+nypmEND = input.string('19:00', 'End', inline='NYP', group = sesGR, tooltip = 'Format HH:MM (e.g. 19:00, 17:00)')
+nypmTZ_O= input.int(-5, 'UTC Offset', inline='NYP_TZ', group = sesGR)
+nypmC   = input.color(color.new(#E91E63, 0), '  ', inline='NYP1', group = sesGR)
+nypmMMP = input.bool(true, 'Extend : Max/Min | Mid', inline = 'NYP1', group = sesGR)
+nypmSM  = input.bool(false, '', inline = 'NYP1', group = sesGR)
+nypmBG  = input.bool(true, 'Fill', inline = 'NYP1', group = sesGR)
+
+nyDST   = input.bool(false , 'New York DST | London DST', inline = 'DST', group = sesGR, tooltip = 'For Manual UTC Offset mode: Check this box if New York or London is currently in Daylight Saving Time.\nNote: When Timezone Mode is set to Auto (Recommended), DST is handled automatically.')
+ldnDST  = input.bool(false , '', inline = 'DST', group = sesGR)
+
+sesDET  = input.bool(true , 'Sessions Extreme Lines | Sessions Names', inline = 'NAM', group = sesGR)
+sesNM   = input.bool(true , '', inline = 'NAM', group = sesGR)
+sesLNW  = input.int(1 , '  Session Lines Width', group = sesGR)
+sesFT   = input.int(95, '  Session Fill Transparency', minval = 0, maxval = 100, group = sesGR)
+
+// Session Sweep Pairing Rules (Requirement 4)
+pairGR  = 'Session Sweep Pairing Rules'
+swpMode = input.string("Specific Pairs Only", "Sweep Detection Mode", options = ["Specific Pairs Only", "All Sweeps (Any Session)"], group = pairGR, tooltip = "In 'Specific Pairs Only' mode, a session's high/low is only swept when the designated active session breaches it (e.g. London swept during New York). In 'All Sweeps' mode, any subsequent price action can trigger the sweep.")
+
+r1_en   = input.bool(true, "Rule 1: Target", inline = "R1", group = pairGR)
+r1_tgt  = input.string("London", "", options = ["London", "Asia", "NY AM", "NY PM", "All"], inline = "R1", group = pairGR)
+r1_swp  = input.string("New York (AM+PM)", "Swept In", options = ["New York (AM+PM)", "NY AM", "NY PM", "London", "Asia", "Any"], inline = "R1", group = pairGR)
+
+r2_en   = input.bool(true, "Rule 2: Target", inline = "R2", group = pairGR)
+r2_tgt  = input.string("Asia", "", options = ["London", "Asia", "NY AM", "NY PM", "All"], inline = "R2", group = pairGR)
+r2_swp  = input.string("London", "Swept In", options = ["New York (AM+PM)", "NY AM", "NY PM", "London", "Asia", "Any"], inline = "R2", group = pairGR)
+
+r3_en   = input.bool(true, "Rule 3: Target", inline = "R3", group = pairGR)
+r3_tgt  = input.string("NY PM", "", options = ["London", "Asia", "NY AM", "NY PM", "All"], inline = "R3", group = pairGR)
+r3_swp  = input.string("Asia", "Swept In", options = ["New York (AM+PM)", "NY AM", "NY PM", "London", "Asia", "Any"], inline = "R3", group = pairGR)
+
+r4_en   = input.bool(false, "Rule 4: Target", inline = "R4", group = pairGR)
+r4_tgt  = input.string("NY AM", "", options = ["London", "Asia", "NY AM", "NY PM", "All"], inline = "R4", group = pairGR)
+r4_swp  = input.string("NY PM", "Swept In", options = ["New York (AM+PM)", "NY AM", "NY PM", "London", "Asia", "Any"], inline = "R4", group = pairGR)
+
+r5_en   = input.bool(false, "Rule 5: Target", inline = "R5", group = pairGR)
+r5_tgt  = input.string("Asia", "", options = ["London", "Asia", "NY AM", "NY PM", "All"], inline = "R5", group = pairGR)
+r5_swp  = input.string("New York (AM+PM)", "Swept In", options = ["New York (AM+PM)", "NY AM", "NY PM", "London", "Asia", "Any"], inline = "R5", group = pairGR)
+
+r6_en   = input.bool(false, "Rule 6: Target", inline = "R6", group = pairGR)
+r6_tgt  = input.string("London", "", options = ["London", "Asia", "NY AM", "NY PM", "All"], inline = "R6", group = pairGR)
+r6_swp  = input.string("NY PM", "Swept In", options = ["New York (AM+PM)", "NY AM", "NY PM", "London", "Asia", "Any"], inline = "R6", group = pairGR)
+
+// HTF Key Levels Group (PDH/PDL, PWH/PWL, PMH/PML)
+htfGR         = "HTF Key Levels (PDH/PDL, PWH/PWL, PMH/PML)"
+htfEnable     = input.bool(true, "Enable HTF Key Levels", group = htfGR)
+htfHistMode   = input.string("Keep Historical Lines", "Display Mode", options = ["Keep Historical Lines", "Current Period Only"], group = htfGR, tooltip = "'Keep Historical Lines' preserves past days/weeks/months on chart. 'Current Period Only' shows only active levels.")
+showHtfLabels = input.bool(true, "Show Labels at Line End", inline = "HLBL", group = htfGR)
+htfShowPrice  = input.bool(true, "Include Price in Labels", inline = "HLBL", group = htfGR)
+showHtfSweeps = input.bool(true, "Detect Sweeps of HTF Levels ($)", inline = "HSWP", group = htfGR)
+htfExtend     = input.bool(false, "Extend Lines to Right", inline = "HSWP", group = htfGR)
+
+// Previous Day High & Low (PDH / PDL)
+showPD        = input.bool(true, "Previous Day (PDH / PDL)", inline = "PD", group = htfGR)
+pdCol         = input.color(color.new(#FF9800, 0), "", inline = "PD", group = htfGR)
+pdStyle       = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "PD", group = htfGR)
+pdWidth       = input.int(1, "Width", minval = 1, maxval = 4, inline = "PD", group = htfGR)
+
+// Previous Week High & Low (PWH / PWL)
+showPW        = input.bool(true, "Previous Week (PWH / PWL)", inline = "PW", group = htfGR)
+pwCol         = input.color(color.new(#2196F3, 0), "", inline = "PW", group = htfGR)
+pwStyle       = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "PW", group = htfGR)
+pwWidth       = input.int(1, "Width", minval = 1, maxval = 4, inline = "PW", group = htfGR)
+
+// Previous Month High & Low (PMH / PML)
+showPM        = input.bool(true, "Previous Month (PMH / PML)", inline = "PM", group = htfGR)
+pmCol         = input.color(color.new(#9C27B0, 0), "", inline = "PM", group = htfGR)
+pmStyle       = input.string("Solid", "", options = ["Solid", "Dashed", "Dotted"], inline = "PM", group = htfGR)
+pmWidth       = input.int(1, "Width", minval = 1, maxval = 4, inline = "PM", group = htfGR)
+
+// Market Structure Shifts Group
+mssGR   = 'Market Structure Shifts'
+mssSH   = input.bool(false, 'Market Structure Shifts', group = mssGR)
+mssLN   = input.int(8, "Detection Length", minval = 1, group = mssGR)
+ppLCB   = input.color(color.new(color.teal, 0), 'Market Structure Shifts : Bullish', inline = 'MSS', group = mssGR)
+ppLCS   = input.color(color.new(color.red, 0), 'Bearish', inline = 'MSS', group = mssGR)
+
+// Fair Value Gaps Group
+fvgGR   = 'Fair Value Gaps'
+fvgSH   = input.bool(false, 'Fair Value Gaps', group = fvgGR)
+fvgTT   = 'The script displays the fair value gaps whose width is larger than a fixed-length atr (average true range) value multiplied by the value of the option.\n\n' + 
+          'The option value set to 0 means no filtering is applied.\n\n' + 
+          'Remark: no filtering will be applied for the first 144 (atr fixed-length) candles since the atr value won\'t be present'
+fvgTH   = input.float(1, 'Fair Value Gap Width Filter', minval = 0, step = .1, tooltip = fvgTT, group = fvgGR)
+fvgBC   = input.color(color.new(color.teal, 80), 'Bullish Imbalance', inline = 'FVG', group = fvgGR)
+fvgSC   = input.color(color.new(color.red, 80), 'Bearish Imbalance', inline = 'FVG', group = fvgGR)
+
+// Session Sweeps Table Group
+sesOTH       = 'Session Sweeps Table'
+sesTSH       = input.bool(true , 'Show Session Sweeps Table'  , group = sesOTH, tooltip = 'Displays a live table tracking session sweeps (London Low swept, NY PM swept, etc.) with tick/no-tick indicators and active session statuses.')
+swpTableHtf  = input.bool(true , 'Include Previous Day (PDH/PDL)', group = sesOTH, tooltip = 'Adds Previous Day High & Low sweep status row to the table when HTF Key Levels are enabled.')
+swpTickStyle = input.string('Icon + Text (✔ Swept / ✘ No)', 'Table Sweep Mark Format', options = ['Icon + Text (✔ Swept / ✘ No)', 'Icon Only (✔ / ✘)', 'Text Only (Swept / No)', 'Check / Dash (✔ / —)'], group = sesOTH)
+hIfN         = input.bool(false, 'Hide if not Forex Market Instrument'  , group = sesOTH)
+sesTS        = input.string("Small", "  Table Text Size", options = [ "Tiny", "Small", "Normal"], inline='STAT',group = sesOTH)
+sesPOS       = input.string('Top Right', '', options = ['Top Left', 'Top Center', 'Top Right', 'Middle Right', 'Bottom Left', 'Bottom Center'], inline='STAT', group = sesOTH)
+
+//-----------------------------------------------------------------------------}
+// User Defined Types
+//-----------------------------------------------------------------------------{
+
+type SessionState
+    string  name         = ""
+    color   col          = color.blue
+    bool    enabled      = true
+    int     startH       = 0
+    int     startM       = 0
+    int     endH         = 0
+    int     endM         = 0
+    int     startMin     = 0
+    int     endMin       = 0
+    int     tzOffset     = 0
+    bool    dst          = false
+    string  tzName       = ""
+    bool    extendMm     = true
+    bool    showMid      = false
+    bool    fillBg       = true
+
+    // State tracking during active session
+    bool    inSession    = false
+    float   curHigh      = na
+    float   curLow       = na
+    int     curStartBar  = 0
+
+    // Last completed session levels
+    float   lastHigh     = na
+    float   lastLow      = na
+    int     lastStartBar = 0
+    int     lastEndBar   = 0
+    bool    hasCompleted = false
+    bool    highSwept    = false
+    bool    lowSwept     = false
+
+    // Table persistent sweep tracking
+    bool    tableHighSwept = false
+    bool    tableLowSwept  = false
+    string  tableHighBy    = ""
+    string  tableLowBy     = ""
+
+    // Session lines during formation
+    line    lnH          = na
+    line    lnL          = na
+    box     bxName       = na
+
+    // Extension lines after session ends
+    line    extH         = na
+    line    extL         = na
+    line    extM         = na
+
+    // Active sweep boxes
+    box     bzBox        = na
+    bool    bzActive     = false
+    box     szBox        = na
+    bool    szActive     = false
+
+type pivotPoint
+    float  h  = na
+    int    ht = 0
+    bool   hx = false
+
+    float  l  = na
+    int    lt = 0
+    bool   lx = false
+
+type FVG
+    box  [] uFVG
+
+//-----------------------------------------------------------------------------}
+// Variables & Helpers
+//-----------------------------------------------------------------------------{
+
+swpATR = ta.atr(21)
+var pivotPoint pp = pivotPoint.new()
+var shift = 0
+var FVG fvg = FVG.new(array.new <box> (na))
+fvgATR = nz(ta.atr(144)) * fvgTH
+var bool last = false 
+
+// Label size converter using ternary
+lblSize = swpSignSize == "Tiny" ? size.tiny : swpSignSize == "Small" ? size.small : swpSignSize == "Large" ? size.large : size.normal
+
+// Line style converters
+unsweptStyle = swpLineStyle == "Solid" ? line.style_solid : line.style_dotted
+sweptStyle   = swpSweptStyle == "Dashed" ? line.style_dashed : swpSweptStyle == "Dotted" ? line.style_dotted : line.style_solid
+
+// Table size converter using ternary
+sesTableSize = sesTS == "Small" ? size.small : sesTS == "Normal" ? size.normal : size.tiny
+
+// Helper function to build sweep labels (e.g. LH$, LL$, AH$, AL$, NAH$, NAL$, NPH$, NPL$)
+f_getSweepLabelText(name, isHigh, symbol) =>
+    prefix = name == asST or name == "Asia" ? "A" : name == ldnST or name == "London" ? "L" : name == nyamST or name == "NY AM" ? "NA" : name == nypmST or name == "NY PM" ? "NP" : str.substring(name, 0, math.min(2, str.length(name)))
+    prefix + (isHigh ? "H" : "L") + symbol
+
+// Global tracking array to stack sweep labels vertically on the same candle (prevents overlapping text)
+// index 0: lastBarIndex, index 1: aboveBarCount, index 2: belowBarCount
+var int[] sweepLabelCounts = array.new_int(3, 0)
+
+// Helper function to plot stacked sweep labels cleanly without overlap
+f_plotSweepLabel(isHigh, txt, col, sz) =>
+    if allowSweepPlot
+        lastIdx = array.get(sweepLabelCounts, 0)
+        if bar_index != lastIdx
+            array.set(sweepLabelCounts, 0, bar_index)
+            array.set(sweepLabelCounts, 1, 0)
+            array.set(sweepLabelCounts, 2, 0)
+
+        atrVal = ta.atr(14)
+        if isHigh
+            cnt = array.get(sweepLabelCounts, 1) + 1
+            array.set(sweepLabelCounts, 1, cnt)
+            yVal = cnt == 1 ? high : high + (cnt - 1) * atrVal * 0.9
+            yLocType = cnt == 1 ? yloc.abovebar : yloc.price
+            label.new(bar_index, yVal, txt, xloc = xloc.bar_index, yloc = yLocType, color = color(na), textcolor = col, style = label.style_none, size = sz)
+        if not isHigh
+            cnt = array.get(sweepLabelCounts, 2) + 1
+            array.set(sweepLabelCounts, 2, cnt)
+            yVal = cnt == 1 ? low : low - (cnt - 1) * atrVal * 0.9
+            yLocType = cnt == 1 ? yloc.belowbar : yloc.price
+            label.new(bar_index, yVal, txt, xloc = xloc.bar_index, yloc = yLocType, color = color(na), textcolor = col, style = label.style_none, size = sz)
+
+// Helper function to parse "HH:MM" string safely into [Hour, Minute]
+f_parseHHMM(strVal, defaultH, defaultM) =>
+    pos = str.pos(strVal, ":")
+    h = defaultH
+    m = defaultM
+    if not na(pos)
+        hStr = str.substring(strVal, 0, pos)
+        mStr = str.substring(strVal, pos + 1)
+        hVal = str.tonumber(hStr)
+        mVal = str.tonumber(mStr)
+        h := not na(hVal) ? int(hVal) : defaultH
+        m := not na(mVal) ? int(mVal) : defaultM
+    if na(pos)
+        hVal = str.tonumber(strVal)
+        h := not na(hVal) ? int(hVal) : defaultH
+        m := 0
+    [math.min(23, math.max(0, h)), math.min(59, math.max(0, m))]
+
+// Parse all session start and end times with minute precision
+[asSH_h, asSH_m]   = f_parseHHMM(asSRT, 9, 0)
+[asEH_h, asEH_m]   = f_parseHHMM(asEND, 18, 0)
+
+[ldnSH_h, ldnSH_m] = f_parseHHMM(ldnSRT, 8, 0)
+[ldnEH_h, ldnEH_m] = f_parseHHMM(ldnEND, 17, 0)
+
+// NY AM Session Times based on user's selected profile
+isOption1 = nyProfile == "Option 1 (NQ)"
+effectiveNyamSRT = isOption1 ? ny1_srt : ny2_srt
+effectiveNyamEND = isOption1 ? ny1_end : ny2_end
+
+[nyamSH_h, nyamSH_m] = f_parseHHMM(effectiveNyamSRT, isOption1 ? 9 : 8, isOption1 ? 30 : 0)
+[nyamEH_h, nyamEH_m] = f_parseHHMM(effectiveNyamEND, 12, 0)
+
+[nypmSH_h, nypmSH_m] = f_parseHHMM(nypmSRT, 13, 0)
+[nypmEH_h, nypmEH_m] = f_parseHHMM(nypmEND, 19, 0)
+
+// Initialize Session State Objects with clean parameterless .new()
+var SessionState sesAsia   = SessionState.new()
+var SessionState sesLondon = SessionState.new()
+var SessionState sesNyAm   = SessionState.new()
+var SessionState sesNyPm   = SessionState.new()
+
+// Update parameters dynamically on each bar
+sesAsia.enabled   := asSH,   sesAsia.name   := asST,   sesAsia.col   := asC,   sesAsia.extendMm := asMMP, sesAsia.showMid := asSM, sesAsia.fillBg := asBG
+sesAsia.startH    := asSH_h, sesAsia.startM := asSH_m, sesAsia.endH  := asEH_h, sesAsia.endM := asEH_m
+sesAsia.startMin  := asSH_h * 60 + asSH_m,  sesAsia.endMin := asEH_h * 60 + asEH_m, sesAsia.tzOffset := asTZ_O, sesAsia.dst := false, sesAsia.tzName := "Asia/Tokyo"
+
+sesLondon.enabled := ldnSH,  sesLondon.name := ldnST,  sesLondon.col := ldnC,  sesLondon.extendMm := ldnMMP, sesLondon.showMid := ldnSM, sesLondon.fillBg := ldnBG
+sesLondon.startH  := ldnSH_h, sesLondon.startM := ldnSH_m, sesLondon.endH := ldnEH_h, sesLondon.endM := ldnEH_m
+sesLondon.startMin:= ldnSH_h * 60 + ldnSH_m, sesLondon.endMin := ldnEH_h * 60 + ldnEH_m, sesLondon.tzOffset := ldnTZ_O, sesLondon.dst := ldnDST, sesLondon.tzName := "Europe/London"
+
+sesNyAm.enabled   := nyamSH, sesNyAm.name   := nyamST, sesNyAm.col   := nyamC, sesNyAm.extendMm := nyamMMP, sesNyAm.showMid := nyamSM, sesNyAm.fillBg := nyamBG
+sesNyAm.startH    := nyamSH_h, sesNyAm.startM := nyamSH_m, sesNyAm.endH := nyamEH_h, sesNyAm.endM := nyamEH_m
+sesNyAm.startMin  := nyamSH_h * 60 + nyamSH_m, sesNyAm.endMin := nyamEH_h * 60 + nyamEH_m, sesNyAm.tzOffset := nyamTZ_O, sesNyAm.dst := nyDST, sesNyAm.tzName := "America/New_York"
+
+sesNyPm.enabled   := nypmSH, sesNyPm.name   := nypmST, sesNyPm.col   := nypmC, sesNyPm.extendMm := nypmMMP, sesNyPm.showMid := nypmSM, sesNyPm.fillBg := nypmBG
+sesNyPm.startH    := nypmSH_h, sesNyPm.startM := nypmSH_m, sesNyPm.endH := nypmEH_h, sesNyPm.endM := nypmEH_m
+sesNyPm.startMin  := nypmSH_h * 60 + nypmSH_m, sesNyPm.endMin := nypmEH_h * 60 + nypmEH_m, sesNyPm.tzOffset := nypmTZ_O, sesNyPm.dst := nyDST, sesNyPm.tzName := "America/New_York"
+
+//-----------------------------------------------------------------------------}
+// Timeframe & Session Active Detection Functions
+//-----------------------------------------------------------------------------{
+
+// Check if current chart timeframe is enabled by user (Requirement 3)
+f_isTfAllowed() =>
+    timeframe.isintraday and (
+     (tfAllIntra and timeframe.multiplier <= 240) or
+     (timeframe.multiplier == 1 and tf1) or
+     (timeframe.multiplier == 3 and tf3) or
+     (timeframe.multiplier == 5 and tf5) or
+     (timeframe.multiplier == 15 and tf15) or
+     (timeframe.multiplier == 30 and tf30) or
+     (timeframe.multiplier == 60 and tf60) or
+     (timeframe.multiplier == 120 and tf120) or
+     (timeframe.multiplier == 240 and tf240))
+
+// Interval overlap helper
+f_overlap(bS, bE, sS, sE) =>
+    math.max(bS, sS) < math.min(bE, sE)
+
+// Minute-precise session active checker with interval overlap (supports 1m up to 4H)
+f_isBarInSession(t, tzOff, dst, sMin, eMin, tzName, isAuto) =>
+    localH = isAuto and tzName != "" ? hour(t, tzName) : hour(t + (tzOff + (dst ? 1 : 0)) * 3600000, "Etc/UTC")
+    localM = isAuto and tzName != "" ? minute(t, tzName) : minute(t + (tzOff + (dst ? 1 : 0)) * 3600000, "Etc/UTC")
+    bS = localH * 60 + localM
+    bDuration = math.max(1, timeframe.isintraday ? timeframe.multiplier : 1)
+    bE = bS + bDuration
+
+    inSes = false
+    if sMin < eMin
+        inSes := bE <= 1440 ? f_overlap(bS, bE, sMin, eMin) : (f_overlap(bS, 1440, sMin, eMin) or f_overlap(0, bE - 1440, sMin, eMin))
+    if sMin > eMin
+        inSes := bE <= 1440 ? (f_overlap(bS, bE, sMin, 1440) or f_overlap(bS, bE, 0, eMin)) : (f_overlap(bS, 1440, sMin, 1440) or f_overlap(0, bE - 1440, 0, eMin))
+    inSes
+
+// Helper function to format sweep mark in table based on user preference
+f_getSweepMark(isSwept, style) =>
+    switch style
+        'Icon Only (✔ / ✘)'        => isSwept ? '✔' : '✘'
+        'Text Only (Swept / No)'     => isSwept ? 'Swept' : 'No'
+        'Check / Dash (✔ / —)'       => isSwept ? '✔' : '—'
+        => isSwept ? '✔ Swept' : '✘ No'
+
+// Top-level sweeper match helper (Requirement 4)
+f_matchSweeper(swpReq, isAsActive, isLdnActive, isNyamActive, isNypmActive) =>
+    swpReq == "Any" or 
+     (swpReq == "Asia" and isAsActive) or 
+     (swpReq == "London" and isLdnActive) or 
+     (swpReq == "NY AM" and isNyamActive) or 
+     (swpReq == "NY PM" and isNypmActive) or 
+     (swpReq == "New York (AM+PM)" and (isNyamActive or isNypmActive))
+
+// Check if a specific target session is permitted to be swept on current bar (Requirement 4)
+f_canSweep(targetName, isAsActive, isLdnActive, isNyamActive, isNypmActive) =>
+    allowed = swpMode == "All Sweeps (Any Session)"
+    if not allowed
+        if r1_en and (r1_tgt == targetName or r1_tgt == "All") and f_matchSweeper(r1_swp, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+            allowed := true
+        if r2_en and (r2_tgt == targetName or r2_tgt == "All") and f_matchSweeper(r2_swp, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+            allowed := true
+        if r3_en and (r3_tgt == targetName or r3_tgt == "All") and f_matchSweeper(r3_swp, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+            allowed := true
+        if r4_en and (r4_tgt == targetName or r4_tgt == "All") and f_matchSweeper(r4_swp, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+            allowed := true
+        if r5_en and (r5_tgt == targetName or r5_tgt == "All") and f_matchSweeper(r5_swp, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+            allowed := true
+        if r6_en and (r6_tgt == targetName or r6_tgt == "All") and f_matchSweeper(r6_swp, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+            allowed := true
+    allowed
+
+//-----------------------------------------------------------------------------}
+// Session Lifecycle Engine
+//-----------------------------------------------------------------------------{
+
+f_updateSessionLifecycle(s, isIn) =>
+    if s.enabled
+        wasIn = s.inSession
+        s.inSession := isIn
+
+        // 1. Session Just Started
+        if isIn and not wasIn
+            s.curHigh := high
+            s.curLow  := low
+            s.curStartBar := bar_index
+
+            s.lnH := line.new(bar_index, high, bar_index, high, xloc.bar_index, extend.none, color.new(s.col, sesDET ? 0 : sesFT), unsweptStyle, sesLNW)
+            s.lnL := line.new(bar_index, low, bar_index, low, xloc.bar_index, extend.none, color.new(s.col, sesDET ? 0 : sesFT), unsweptStyle, sesLNW)
+            if s.fillBg
+                linefill.new(s.lnH, s.lnL, color.new(s.col, sesFT))
+
+            if sesNM
+                s.bxName := box.new(bar_index, low, bar_index, low, text = s.name, text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_top,
+                                     text_color = color.new(s.col, 25), bgcolor = color(na), border_color = color(na))
+
+        // 2. Session is Currently Forming
+        if isIn
+            s.curHigh := math.max(high, s.curHigh)
+            s.curLow  := math.min(low, s.curLow)
+            s.lnH.set_y1(s.curHigh)
+            s.lnH.set_y2(s.curHigh)
+            s.lnH.set_x2(bar_index)
+
+            s.lnL.set_y1(s.curLow)
+            s.lnL.set_y2(s.curLow)
+            s.lnL.set_x2(bar_index)
+
+            if sesNM and not na(s.bxName)
+                s.bxName.set_bottom(s.curLow)
+                s.bxName.set_top(s.curLow)
+
+        // 3. Session Just Completed
+        if not isIn and wasIn
+            s.lastHigh := s.curHigh
+            s.lastLow  := s.curLow
+            s.lastStartBar := s.curStartBar
+            s.lastEndBar := bar_index - 1
+            s.hasCompleted := true
+            s.highSwept := false
+            s.lowSwept  := false
+            s.tableHighSwept := false
+            s.tableLowSwept  := false
+            s.tableHighBy    := ""
+            s.tableLowBy     := ""
+            s.bzActive  := false
+            s.szActive  := false
+
+            // Extension lines forward into subsequent sessions (initially solid)
+            midVal = math.avg(s.lastHigh, s.lastLow)
+            s.extH := line.new(bar_index - 1, s.lastHigh, bar_index, s.lastHigh, xloc.bar_index, extend.none, s.extendMm ? s.col : color(na), unsweptStyle, sesLNW)
+            s.extL := line.new(bar_index - 1, s.lastLow,  bar_index, s.lastLow,  xloc.bar_index, extend.none, s.extendMm ? s.col : color(na), unsweptStyle, sesLNW)
+            s.extM := line.new(bar_index - 1, midVal,     bar_index, midVal,     xloc.bar_index, extend.none, s.showMid  ? s.col : color(na), line.style_dotted, sesLNW)
+
+        // 4. Session is Inactive (extend lines forward and maintain swept dashed style)
+        if not isIn and s.hasCompleted
+            if not na(s.extH)
+                s.extH.set_x2(bar_index)
+                if s.highSwept
+                    s.extH.set_style(sweptStyle)
+            if not na(s.extL)
+                s.extL.set_x2(bar_index)
+                if s.lowSwept
+                    s.extL.set_style(sweptStyle)
+            if not na(s.extM)
+                s.extM.set_x2(bar_index)
+
+//-----------------------------------------------------------------------------}
+// Sweep Detection Engine
+//-----------------------------------------------------------------------------{
+
+f_processSweepsForTarget(target, isAsActive, isLdnActive, isNyamActive, isNypmActive) =>
+    if target.enabled and target.hasCompleted and not target.inSession
+        canSweep = f_canSweep(target.name, isAsActive, isLdnActive, isNyamActive, isNypmActive)
+
+        if canSweep
+            activeSweeper = isNypmActive ? sesNyPm.name : isNyamActive ? sesNyAm.name : isLdnActive ? sesLondon.name : isAsActive ? sesAsia.name : "Market"
+            targetColor = swpUseSesCol ? target.col : swpBC
+            targetLowColor = swpUseSesCol ? target.col : swpSC
+            pSH = target.lastHigh
+            pSL = target.lastLow
+
+            // --- BUY SIDE SWEEP (High breached -> LH$, AH$, NAH$, NPH$) ---
+            if not target.highSwept
+                if high > pSH and (open < pSH or low < pSH)
+                    target.tableHighSwept := true
+                    if target.tableHighBy == ""
+                        target.tableHighBy := activeSweeper
+                    alert(syminfo.ticker + ' ' + target.name + ' buyside session level breached, price ' + str.tostring(close, format.mintick) + ', timeframe ' + timeframe.period, alert.freq_once_per_bar)
+                    if swpBZ and allowSweepPlot
+                        target.bzBox := box.new(bar_index - 1, high, bar_index + 1, pSH, bgcolor = color.new(targetColor, 75), border_color = color(na))
+                        target.bzActive  := true
+                    target.highSwept := true
+
+                    // Level swept: Turn lines into dashed
+                    if not na(target.extH)
+                        target.extH.set_style(sweptStyle)
+                    if not na(target.lnH)
+                        target.lnH.set_style(sweptStyle)
+
+                    // Plot Session Name + H + $ Sign in target session's color (e.g. LH$, AH$, NAH$, NPH$)
+                    if swpShowHighSign
+                        highLabelText = f_getSweepLabelText(target.name, true, swpSignText)
+                        f_plotSweepLabel(true, highLabelText, target.col, lblSize)
+
+            if swpBZ and target.highSwept and target.bzActive
+                inZone = low > pSH - swpBM * swpATR and high < pSH + swpBM * swpATR
+                if inZone
+                    target.bzBox.set_top(math.max(high, target.bzBox.get_top()))
+                    if high > pSH
+                        target.bzBox.set_right(bar_index + 1)
+                if not inZone
+                    if close > pSH + swpBM * swpATR * 1.5
+                        target.bzBox.set_bgcolor(swpHF ? color(na) : swpFC)
+                        target.bzBox.set_right(bar_index)
+                        target.bzActive := false
+                    if close <= pSH + swpBM * swpATR * 1.5 and bar_index - target.bzBox.get_right() >= swpML
+                        if high > pSH + swpBM * swpATR
+                            target.bzBox.set_bgcolor(swpHF ? color(na) : swpFC)
+                            target.bzBox.set_right(bar_index + 1)
+                        target.bzActive := false
+                        if not swpDT
+                            target.highSwept := false
+
+            // --- SELL SIDE SWEEP (Low breached -> LL$, AL$, NAL$, NPL$) ---
+            if not target.lowSwept
+                if low < pSL and (open > pSL or high > pSL)
+                    target.tableLowSwept := true
+                    if target.tableLowBy == ""
+                        target.tableLowBy := activeSweeper
+                    alert(syminfo.ticker + ' ' + target.name + ' sellside session level breached, price ' + str.tostring(close, format.mintick) + ', timeframe ' + timeframe.period, alert.freq_once_per_bar)
+                    if swpSZ and allowSweepPlot
+                        target.szBox := box.new(bar_index - 1, pSL, bar_index + 1, low, bgcolor = color.new(targetLowColor, 75), border_color = color(na))
+                        target.szActive := true
+                    target.lowSwept := true
+
+                    // Level swept: Turn lines into dashed
+                    if not na(target.extL)
+                        target.extL.set_style(sweptStyle)
+                    if not na(target.lnL)
+                        target.lnL.set_style(sweptStyle)
+
+                    // Plot Session Name + L + $ Sign in target session's color (e.g. LL$, AL$, NAL$, NPL$)
+                    if swpShowLowSign
+                        lowLabelText = f_getSweepLabelText(target.name, false, swpSignText)
+                        f_plotSweepLabel(false, lowLabelText, target.col, lblSize)
+
+            if swpSZ and target.lowSwept and target.szActive
+                inZoneL = low > pSL - swpSM * swpATR and high < pSL + swpSM * swpATR
+                if inZoneL
+                    target.szBox.set_bottom(math.min(low, target.szBox.get_bottom()))
+                    if low < pSL
+                        target.szBox.set_right(bar_index + 1)
+                if not inZoneL
+                    if close < pSL - swpSM * swpATR * 1.5
+                        target.szBox.set_bgcolor(swpHF ? color(na) : swpFC)
+                        target.szBox.set_right(bar_index + 1)
+                        target.szActive := false
+                    if close >= pSL - swpSM * swpATR * 1.5 and bar_index - target.szBox.get_right() >= swpML
+                        if low < pSL - swpSM * swpATR
+                            target.szBox.set_bgcolor(swpHF ? color(na) : swpFC)
+                            target.szBox.set_right(bar_index + 1)
+                        target.szActive := false
+                        if not swpDT
+                            target.lowSwept := false
+
+// Fair Value Gap helper methods
+method clear(FVG _id) =>
+    _id.uFVG.pop()
+
+method fvgUpdate(FVG _id, _h, _l, _p) =>
+    cUB = _id.uFVG.get(0)
+    tUB = cUB.get_top()
+    bUB = cUB.get_bottom()
+
+    if _h > bUB and _l < tUB
+        if _p and _l <= bUB
+            fvg.clear()
+        if not _p and _h >= tUB
+            fvg.clear()
+
+    cUB.set_right(bar_index)
+
+//-----------------------------------------------------------------------------}
+// Main Execution - Sessions & Sweeps
+//-----------------------------------------------------------------------------{
+
+tfAllowed = f_isTfAllowed()
+
+if tfAllowed
+    // Determine raw active sessions based on time
+    rawAsIn   = sesAsia.enabled   ? f_isBarInSession(time, sesAsia.tzOffset, sesAsia.dst, sesAsia.startMin, sesAsia.endMin, sesAsia.tzName, isAutoTz) : false
+    rawLdnIn  = sesLondon.enabled  ? f_isBarInSession(time, sesLondon.tzOffset, sesLondon.dst, sesLondon.startMin, sesLondon.endMin, sesLondon.tzName, isAutoTz) : false
+    rawNyamIn = sesNyAm.enabled   ? f_isBarInSession(time, sesNyAm.tzOffset, sesNyAm.dst, sesNyAm.startMin, sesNyAm.endMin, sesNyAm.tzName, isAutoTz) : false
+    rawNypmIn = sesNyPm.enabled   ? f_isBarInSession(time, sesNyPm.tzOffset, sesNyPm.dst, sesNyPm.startMin, sesNyPm.endMin, sesNyPm.tzName, isAutoTz) : false
+
+    isAsActive   = rawAsIn
+    isLdnActive  = rawLdnIn
+    isNyamActive = rawNyamIn
+    isNypmActive = rawNypmIn
+
+    // If Session Overlap is OFF (default), newer session automatically cuts off prior active sessions
+    if not sesOverlap
+        if rawNypmIn
+            isNyamActive := false
+            isLdnActive  := false
+            isAsActive   := false
+        if rawNyamIn and not rawNypmIn
+            isLdnActive  := false
+            isAsActive   := false
+        if rawLdnIn and not rawNyamIn and not rawNypmIn
+            isAsActive   := false
+
+    // 1. Update session lifecycles with computed active statuses
+    f_updateSessionLifecycle(sesAsia,   isAsActive)
+    f_updateSessionLifecycle(sesLondon,  isLdnActive)
+    f_updateSessionLifecycle(sesNyAm,   isNyamActive)
+    f_updateSessionLifecycle(sesNyPm,   isNypmActive)
+
+    // 2. Process sweep rules and signals for each target session
+    f_processSweepsForTarget(sesAsia,   isAsActive, isLdnActive, isNyamActive, isNypmActive)
+    f_processSweepsForTarget(sesLondon,  isAsActive, isLdnActive, isNyamActive, isNypmActive)
+    f_processSweepsForTarget(sesNyAm,   isAsActive, isLdnActive, isNyamActive, isNypmActive)
+    f_processSweepsForTarget(sesNyPm,   isAsActive, isLdnActive, isNyamActive, isNypmActive)
+
+if not tfAllowed and barstate.islast
+    var table note = table.new(position.bottom_right, 1, 1)
+    table.cell(note, 0, 0, 'Session Sweeps: Current timeframe disabled.\nTick this timeframe in indicator settings (up to 4H).\n\n', text_size = size.small, text_color = chart.fg_color)
+
+
+
+//-----------------------------------------------------------------------------}
+// Calculations - Market Structure Shifts (MSS / CHoCH)
+//-----------------------------------------------------------------------------{
+
+pp_h = ta.pivothigh(mssLN, mssLN)
+pp_l = ta.pivotlow (mssLN, mssLN)
+
+if not na(pp_h)
+    pp.h  := pp_h
+    pp.hx := false
+    pp.ht := bar_index - mssLN
+
+if not na(pp_l)
+    pp.l  := pp_l
+    pp.lx := false
+    pp.lt := bar_index - mssLN
+
+if mssSH
+    if close > pp.h and not pp.hx
+        pp.hx := true
+
+        if shift == -1
+            line.new(pp.ht, pp.h, bar_index, pp.h, color = ppLCB)
+            box.new (pp.ht, pp.h, bar_index, pp.h, text = 'CHoCH', text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_bottom, 
+                      text_color = ppLCB, bgcolor = color(na), border_color = color(na))
+        shift := 1
+
+    if close < pp.l and not pp.lx
+        pp.lx := true
+
+        if shift == 1
+            line.new(pp.lt, pp.l, bar_index, pp.l, color = ppLCS)
+            box.new (pp.lt, pp.l, bar_index, pp.l, text = 'CHoCH', text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_top, 
+                      text_color = ppLCS, bgcolor = color(na), border_color = color(na))
+        shift := -1
+
+//-----------------------------------------------------------------------------}
+// Calculations - Fair Value Gaps (FVG)
+//-----------------------------------------------------------------------------{
+
+if fvgSH
+    bullG = low > high[1]
+    bearG = high < low[1]
+
+    bull  = (low - high[2]) > fvgATR and low > high[2] and close[1] > high[2] and not (bullG or bullG[1])
+
+    if bull 
+        if fvg.uFVG.size() > 0
+            fvg.clear()
+
+        fvg.uFVG.push(box.new (bar_index - 1, low, bar_index, high[2], na, bgcolor = fvgBC))
+
+        last := true
+
+    bear  = (low[2] - high) > fvgATR and high < low[2] and close[1] < low[2] and not (bearG or bearG[1])
+
+    if bear 
+        if fvg.uFVG.size() > 0
+            fvg.clear()
+
+        fvg.uFVG.push(box.new (bar_index - 1, low[2], bar_index, high, na, bgcolor = fvgSC))
+
+        last := false
+
+    if bullG or bearG
+        if fvg.uFVG.size() > 0
+            fvg.clear()
+
+    if fvg.uFVG.size() > 0
+        fvg.fvgUpdate(high, low, last)
+
+//-----------------------------------------------------------------------------}
+// Calculations - HTF Key Levels (PDH/PDL, PWH/PWL, PMH/PML)
+//-----------------------------------------------------------------------------{
+
+f_htfLineStyle(s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+// Fetch HTF data (Root scope, non-repainting using completed [1] bar)
+[dHigh, dLow, dTime] = request.security(syminfo.tickerid, "D", [high[1], low[1], time[1]], barmerge.gaps_off, barmerge.lookahead_on)
+[wHigh, wLow, wTime] = request.security(syminfo.tickerid, "W", [high[1], low[1], time[1]], barmerge.gaps_off, barmerge.lookahead_on)
+[mHigh, mLow, mTime] = request.security(syminfo.tickerid, "M", [high[1], low[1], time[1]], barmerge.gaps_off, barmerge.lookahead_on)
+
+// Persistent variables for Daily levels
+var line  lnPdh = na
+var line  lnPdl = na
+var label lblPdh = na
+var label lblPdl = na
+var bool  pdhSwept = false
+var bool  pdlSwept = false
+var float curPdh = na
+var float curPdl = na
+
+// Persistent variables for Weekly levels
+var line  lnPwh = na
+var line  lnPwl = na
+var label lblPwh = na
+var label lblPwl = na
+var bool  pwhSwept = false
+var bool  pwlSwept = false
+var float curPwh = na
+var float curPwl = na
+
+// Persistent variables for Monthly levels
+var line  lnPmh = na
+var line  lnPml = na
+var label lblPmh = na
+var label lblPml = na
+var bool  pmhSwept = false
+var bool  pmlSwept = false
+var float curPmh = na
+var float curPml = na
+
+if htfEnable
+    extStyle = htfExtend ? extend.right : extend.none
+    isCurrentOnly = htfHistMode == "Current Period Only"
+
+    // ==========================================
+    // 1. PREVIOUS DAY HIGH & LOW (PDH / PDL)
+    // ==========================================
+    isDAllowed = timeframe.isintraday or (timeframe.isdaily and timeframe.multiplier == 1)
+    if showPD and isDAllowed and not na(dHigh)
+        isNewDay = (ta.change(dTime) != 0 or timeframe.change("D") or na(curPdh)) and not na(dHigh)
+        if isNewDay
+            curPdh := dHigh
+            curPdl := dLow
+            pdhSwept := false
+            pdlSwept := false
+
+            if isCurrentOnly
+                if not na(lnPdh)
+                    lnPdh.delete()
+                if not na(lnPdl)
+                    lnPdl.delete()
+
+            lnPdh := line.new(bar_index, curPdh, bar_index, curPdh, xloc.bar_index, extend = extStyle, color = pdCol, style = f_htfLineStyle(pdStyle), width = pdWidth)
+            lnPdl := line.new(bar_index, curPdl, bar_index, curPdl, xloc.bar_index, extend = extStyle, color = pdCol, style = f_htfLineStyle(pdStyle), width = pdWidth)
+
+        // Extend active line to current bar
+        if not na(lnPdh) and not htfExtend
+            lnPdh.set_x2(bar_index)
+        if not na(lnPdl) and not htfExtend
+            lnPdl.set_x2(bar_index)
+
+        // Sweep detection
+        if not pdhSwept and high > curPdh and (open < curPdh or low < curPdh or close[1] < curPdh)
+            pdhSwept := true
+            if not na(lnPdh)
+                lnPdh.set_style(line.style_dashed)
+            if showHtfSweeps
+                f_plotSweepLabel(true, "PDH$", pdCol, lblSize)
+                alert(syminfo.ticker + ' PDH breached, price ' + str.tostring(close, format.mintick), alert.freq_once_per_bar)
+
+        if not pdlSwept and low < curPdl and (open > curPdl or high > curPdl or close[1] > curPdl)
+            pdlSwept := true
+            if not na(lnPdl)
+                lnPdl.set_style(line.style_dashed)
+            if showHtfSweeps
+                f_plotSweepLabel(false, "PDL$", pdCol, lblSize)
+                alert(syminfo.ticker + ' PDL breached, price ' + str.tostring(close, format.mintick), alert.freq_once_per_bar)
+
+        // Labels at tip of lines
+        if showHtfLabels
+            pdhText = "PDH" + (htfShowPrice ? " " + str.tostring(curPdh, format.mintick) : "")
+            pdlText = "PDL" + (htfShowPrice ? " " + str.tostring(curPdl, format.mintick) : "")
+            if na(lblPdh)
+                lblPdh := label.new(bar_index, curPdh, pdhText, xloc = xloc.bar_index, yloc = yloc.price, color = color(na), textcolor = pdCol, style = label.style_none, size = size.small)
+            if not na(lblPdh)
+                lblPdh.set_xy(bar_index + (htfExtend ? 5 : 0), curPdh)
+                lblPdh.set_text(pdhText)
+
+            if na(lblPdl)
+                lblPdl := label.new(bar_index, curPdl, pdlText, xloc = xloc.bar_index, yloc = yloc.price, color = color(na), textcolor = pdCol, style = label.style_none, size = size.small)
+            if not na(lblPdl)
+                lblPdl.set_xy(bar_index + (htfExtend ? 5 : 0), curPdl)
+                lblPdl.set_text(pdlText)
+
+    // ==========================================
+    // 2. PREVIOUS WEEK HIGH & LOW (PWH / PWL)
+    // ==========================================
+    isWAllowed = timeframe.isintraday or timeframe.isdaily or (timeframe.isweekly and timeframe.multiplier == 1)
+    if showPW and isWAllowed and not na(wHigh)
+        isNewWeek = (ta.change(wTime) != 0 or timeframe.change("W") or na(curPwh)) and not na(wHigh)
+        if isNewWeek
+            curPwh := wHigh
+            curPwl := wLow
+            pwhSwept := false
+            pwlSwept := false
+
+            if isCurrentOnly
+                if not na(lnPwh)
+                    lnPwh.delete()
+                if not na(lnPwl)
+                    lnPwl.delete()
+
+            lnPwh := line.new(bar_index, curPwh, bar_index, curPwh, xloc.bar_index, extend = extStyle, color = pwCol, style = f_htfLineStyle(pwStyle), width = pwWidth)
+            lnPwl := line.new(bar_index, curPwl, bar_index, curPwl, xloc.bar_index, extend = extStyle, color = pwCol, style = f_htfLineStyle(pwStyle), width = pwWidth)
+
+        // Extend active line to current bar
+        if not na(lnPwh) and not htfExtend
+            lnPwh.set_x2(bar_index)
+        if not na(lnPwl) and not htfExtend
+            lnPwl.set_x2(bar_index)
+
+        // Sweep detection
+        if not pwhSwept and high > curPwh and (open < curPwh or low < curPwh or close[1] < curPwh)
+            pwhSwept := true
+            if not na(lnPwh)
+                lnPwh.set_style(line.style_dashed)
+            if showHtfSweeps
+                f_plotSweepLabel(true, "PWH$", pwCol, lblSize)
+                alert(syminfo.ticker + ' PWH breached, price ' + str.tostring(close, format.mintick), alert.freq_once_per_bar)
+
+        if not pwlSwept and low < curPwl and (open > curPwl or high > curPwl or close[1] > curPwl)
+            pwlSwept := true
+            if not na(lnPwl)
+                lnPwl.set_style(line.style_dashed)
+            if showHtfSweeps
+                f_plotSweepLabel(false, "PWL$", pwCol, lblSize)
+                alert(syminfo.ticker + ' PWL breached, price ' + str.tostring(close, format.mintick), alert.freq_once_per_bar)
+
+        // Labels at tip of lines
+        if showHtfLabels
+            pwhText = "PWH" + (htfShowPrice ? " " + str.tostring(curPwh, format.mintick) : "")
+            pwlText = "PWL" + (htfShowPrice ? " " + str.tostring(curPwl, format.mintick) : "")
+            if na(lblPwh)
+                lblPwh := label.new(bar_index, curPwh, pwhText, xloc = xloc.bar_index, yloc = yloc.price, color = color(na), textcolor = pwCol, style = label.style_none, size = size.small)
+            if not na(lblPwh)
+                lblPwh.set_xy(bar_index + (htfExtend ? 5 : 0), curPwh)
+                lblPwh.set_text(pwhText)
+
+            if na(lblPwl)
+                lblPwl := label.new(bar_index, curPwl, pwlText, xloc = xloc.bar_index, yloc = yloc.price, color = color(na), textcolor = pwCol, style = label.style_none, size = size.small)
+            if not na(lblPwl)
+                lblPwl.set_xy(bar_index + (htfExtend ? 5 : 0), curPwl)
+                lblPwl.set_text(pwlText)
+
+    // ==========================================
+    // 3. PREVIOUS MONTH HIGH & LOW (PMH / PML)
+    // ==========================================
+    isMAllowed = not timeframe.ismonthly or (timeframe.ismonthly and timeframe.multiplier == 1)
+    if showPM and isMAllowed and not na(mHigh)
+        isNewMonth = (ta.change(mTime) != 0 or timeframe.change("M") or na(curPmh)) and not na(mHigh)
+        if isNewMonth
+            curPmh := mHigh
+            curPml := mLow
+            pmhSwept := false
+            pmlSwept := false
+
+            if isCurrentOnly
+                if not na(lnPmh)
+                    lnPmh.delete()
+                if not na(lnPml)
+                    lnPml.delete()
+
+            lnPmh := line.new(bar_index, curPmh, bar_index, curPmh, xloc.bar_index, extend = extStyle, color = pmCol, style = f_htfLineStyle(pmStyle), width = pmWidth)
+            lnPml := line.new(bar_index, curPml, bar_index, curPml, xloc.bar_index, extend = extStyle, color = pmCol, style = f_htfLineStyle(pmStyle), width = pmWidth)
+
+        // Extend active line to current bar
+        if not na(lnPmh) and not htfExtend
+            lnPmh.set_x2(bar_index)
+        if not na(lnPml) and not htfExtend
+            lnPml.set_x2(bar_index)
+
+        // Sweep detection
+        if not pmhSwept and high > curPmh and (open < curPmh or low < curPmh or close[1] < curPmh)
+            pmhSwept := true
+            if not na(lnPmh)
+                lnPmh.set_style(line.style_dashed)
+            if showHtfSweeps
+                f_plotSweepLabel(true, "PMH$", pmCol, lblSize)
+                alert(syminfo.ticker + ' PMH breached, price ' + str.tostring(close, format.mintick), alert.freq_once_per_bar)
+
+        if not pmlSwept and low < curPml and (open > curPml or high > curPml or close[1] > curPml)
+            pmlSwept := true
+            if not na(lnPml)
+                lnPml.set_style(line.style_dashed)
+            if showHtfSweeps
+                f_plotSweepLabel(false, "PML$", pmCol, lblSize)
+                alert(syminfo.ticker + ' PML breached, price ' + str.tostring(close, format.mintick), alert.freq_once_per_bar)
+
+        // Labels at tip of lines
+        if showHtfLabels
+            pmhText = "PMH" + (htfShowPrice ? " " + str.tostring(curPmh, format.mintick) : "")
+            pmlText = "PML" + (htfShowPrice ? " " + str.tostring(curPml, format.mintick) : "")
+            if na(lblPmh)
+                lblPmh := label.new(bar_index, curPmh, pmhText, xloc = xloc.bar_index, yloc = yloc.price, color = color(na), textcolor = pmCol, style = label.style_none, size = size.small)
+            if not na(lblPmh)
+                lblPmh.set_xy(bar_index + (htfExtend ? 5 : 0), curPmh)
+                lblPmh.set_text(pmhText)
+
+            if na(lblPml)
+                lblPml := label.new(bar_index, curPml, pmlText, xloc = xloc.bar_index, yloc = yloc.price, color = color(na), textcolor = pmCol, style = label.style_none, size = size.small)
+            if not na(lblPml)
+                lblPml.set_xy(bar_index + (htfExtend ? 5 : 0), curPml)
+                lblPml.set_text(pmlText)
+
+//-----------------------------------------------------------------------------}
+
+//-----------------------------------------------------------------------------}
+// Calculations - Session Sweeps Table
+//-----------------------------------------------------------------------------{
+
+forex_n_cdf = syminfo.type == 'forex' or syminfo.type == 'cfd'
+
+statPosition = switch sesPOS
+    'Top Left'      => position.top_left
+    'Top Center'    => position.top_center
+    'Top Right'     => position.top_right
+    'Middle Right'  => position.middle_right
+    'Bottom Left'   => position.bottom_left
+    'Bottom Center' => position.bottom_center
+    => position.top_right
+
+hide = hIfN ? (forex_n_cdf ? true : false) : true
+
+f_renderSessionRow(tbl, rowIdx, s, markStyle, tblSize) =>
+    nameCell = "● " + s.name
+    table.cell(tbl, 0, rowIdx, nameCell, text_color = s.col, bgcolor = color.new(s.col, 88), text_halign = text.align_left, text_size = tblSize)
+
+    if not s.enabled
+        table.cell(tbl, 1, rowIdx, "—", text_color = #787b86, bgcolor = color.new(#787b86, 92), text_size = tblSize)
+        table.cell(tbl, 2, rowIdx, "—", text_color = #787b86, bgcolor = color.new(#787b86, 92), text_size = tblSize)
+        table.cell(tbl, 3, rowIdx, "Disabled", text_color = #787b86, bgcolor = color.new(#787b86, 92), text_size = tblSize)
+    else if s.inSession
+        curHStr = na(s.curHigh) ? "—" : str.tostring(s.curHigh, format.mintick) + " (Live)"
+        curLStr = na(s.curLow)  ? "—" : str.tostring(s.curLow, format.mintick) + " (Live)"
+        table.cell(tbl, 1, rowIdx, curHStr, text_color = #29b6f6, bgcolor = color.new(#0288d1, 88), text_size = tblSize)
+        table.cell(tbl, 2, rowIdx, curLStr, text_color = #29b6f6, bgcolor = color.new(#0288d1, 88), text_size = tblSize)
+        table.cell(tbl, 3, rowIdx, "Active 🟢", text_color = #29b6f6, bgcolor = color.new(#0288d1, 85), text_size = tblSize)
+    else if not s.hasCompleted
+        table.cell(tbl, 1, rowIdx, "—", text_color = #787b86, bgcolor = color.new(#787b86, 92), text_size = tblSize)
+        table.cell(tbl, 2, rowIdx, "—", text_color = #787b86, bgcolor = color.new(#787b86, 92), text_size = tblSize)
+        table.cell(tbl, 3, rowIdx, "Waiting", text_color = #787b86, bgcolor = color.new(#787b86, 92), text_size = tblSize)
+    else
+        // High Price + Swept Cell
+        hPriceStr = na(s.lastHigh) ? "—" : str.tostring(s.lastHigh, format.mintick)
+        hMark = f_getSweepMark(s.tableHighSwept, markStyle)
+        hTxt  = hPriceStr + " " + hMark
+        hCol  = s.tableHighSwept ? #00E676 : #90949c
+        hBg   = s.tableHighSwept ? color.new(#26a69a, 78) : color.new(#2a2e39, 65)
+        table.cell(tbl, 1, rowIdx, hTxt, text_color = hCol, bgcolor = hBg, text_size = tblSize)
+
+        // Low Price + Swept Cell
+        lPriceStr = na(s.lastLow) ? "—" : str.tostring(s.lastLow, format.mintick)
+        lMark = f_getSweepMark(s.tableLowSwept, markStyle)
+        lTxt  = lPriceStr + " " + lMark
+        lCol  = s.tableLowSwept ? #00E676 : #90949c
+        lBg   = s.tableLowSwept ? color.new(#26a69a, 78) : color.new(#2a2e39, 65)
+        table.cell(tbl, 2, rowIdx, lTxt, text_color = lCol, bgcolor = lBg, text_size = tblSize)
+
+        // Status Summary Cell
+        statusTxt = "Unswept"
+        statusCol = #90949c
+        statusBg  = color.new(#2a2e39, 65)
+
+        if s.tableHighSwept and s.tableLowSwept
+            statusTxt := "Both Swept ⚡"
+            statusCol := #FFB74D
+            statusBg  := color.new(#FF9800, 80)
+        else if s.tableHighSwept
+            statusTxt := s.tableHighBy != "" ? "High (" + s.tableHighBy + ")" : "High Swept"
+            statusCol := #00E676
+            statusBg  := color.new(#26a69a, 82)
+        else if s.tableLowSwept
+            statusTxt := s.tableLowBy != "" ? "Low (" + s.tableLowBy + ")" : "Low Swept"
+            statusCol := #00E676
+            statusBg  := color.new(#26a69a, 82)
+
+        table.cell(tbl, 3, rowIdx, statusTxt, text_color = statusCol, bgcolor = statusBg, text_size = tblSize)
+
+if barstate.islast and sesTSH and hide and tfAllowed
+    hasHtfRow = swpTableHtf and showPD and htfEnable
+    var table swpTbl = table.new(statPosition, 4, 6, bgcolor = color.new(#131722, 15), border_color = color.new(#363c4e, 60), border_width = 1, frame_color = color.new(#363c4e, 40), frame_width = 2)
+
+    // Header Row
+    table.cell(swpTbl, 0, 0, "Session",         text_color = #d1d4dc, bgcolor = color.new(#1e222d, 10), text_size = sesTableSize)
+    table.cell(swpTbl, 1, 0, "High Price ($)",  text_color = #d1d4dc, bgcolor = color.new(#1e222d, 10), text_size = sesTableSize)
+    table.cell(swpTbl, 2, 0, "Low Price ($)",   text_color = #d1d4dc, bgcolor = color.new(#1e222d, 10), text_size = sesTableSize)
+    table.cell(swpTbl, 3, 0, "Sweep Status",    text_color = #d1d4dc, bgcolor = color.new(#1e222d, 10), text_size = sesTableSize)
+
+    // Session Rows
+    f_renderSessionRow(swpTbl, 1, sesAsia,   swpTickStyle, sesTableSize)
+    f_renderSessionRow(swpTbl, 2, sesLondon,  swpTickStyle, sesTableSize)
+    f_renderSessionRow(swpTbl, 3, sesNyAm,   swpTickStyle, sesTableSize)
+    f_renderSessionRow(swpTbl, 4, sesNyPm,   swpTickStyle, sesTableSize)
+
+    // Optional Previous Day Row
+    if hasHtfRow
+        table.cell(swpTbl, 0, 5, "● Prev Day", text_color = pdCol, bgcolor = color.new(pdCol, 88), text_halign = text.align_left, text_size = sesTableSize)
+        pdhPriceStr = na(curPdh) ? "—" : str.tostring(curPdh, format.mintick)
+        pdhTxt = pdhPriceStr + " " + f_getSweepMark(pdhSwept, swpTickStyle)
+        pdhCol = pdhSwept ? #00E676 : #90949c
+        pdhBg  = pdhSwept ? color.new(#26a69a, 78) : color.new(#2a2e39, 65)
+        table.cell(swpTbl, 1, 5, pdhTxt, text_color = pdhCol, bgcolor = pdhBg, text_size = sesTableSize)
+
+        pdlPriceStr = na(curPdl) ? "—" : str.tostring(curPdl, format.mintick)
+        pdlTxt = pdlPriceStr + " " + f_getSweepMark(pdlSwept, swpTickStyle)
+        pdlCol = pdlSwept ? #00E676 : #90949c
+        pdlBg  = pdlSwept ? color.new(#26a69a, 78) : color.new(#2a2e39, 65)
+        table.cell(swpTbl, 2, 5, pdlTxt, text_color = pdlCol, bgcolor = pdlBg, text_size = sesTableSize)
+
+        pdStatusTxt = "Unswept"
+        pdStatusCol = #90949c
+        pdStatusBg  = color.new(#2a2e39, 65)
+        if pdhSwept and pdlSwept
+            pdStatusTxt := "Both Swept ⚡"
+            pdStatusCol := #FFB74D
+            pdStatusBg  := color.new(#FF9800, 80)
+        else if pdhSwept
+            pdStatusTxt := "PDH Swept"
+            pdStatusCol := #00E676
+            pdStatusBg  := color.new(#26a69a, 82)
+        else if pdlSwept
+            pdStatusTxt := "PDL Swept"
+            pdStatusCol := #00E676
+            pdStatusBg  := color.new(#26a69a, 82)
+
+        table.cell(swpTbl, 3, 5, pdStatusTxt, text_color = pdStatusCol, bgcolor = pdStatusBg, text_size = sesTableSize)
+    else
+        table.cell(swpTbl, 0, 5, "", bgcolor = color(na))
+        table.cell(swpTbl, 1, 5, "", bgcolor = color(na))
+        table.cell(swpTbl, 2, 5, "", bgcolor = color(na))
+        table.cell(swpTbl, 3, 5, "", bgcolor = color(na))
+
+

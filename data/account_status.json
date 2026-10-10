@@ -4,12 +4,12 @@
       "login": "184175962",
       "server": "Exness-MT5Real25",
       "name": "2 percent",
-      "balance": 19760.2,
-      "equity": 19736.6,
+      "balance": 19674.28,
+      "equity": 19674.28,
       "margin": 0.0,
-      "freeMargin": 19736.6,
-      "usdBalance": 197.6,
-      "usdEquity": 197.37,
+      "freeMargin": 19674.28,
+      "usdBalance": 196.74,
+      "usdEquity": 196.74,
       "initialDeposit": 186.71,
       "nativeInitialDeposit": 18671.0,
       "totalDeposits": 186.71,
@@ -17,20 +17,20 @@
       "currency": "USC",
       "isCent": true,
       "status": "connected",
-      "openPositionsCount": 1,
-      "lastUpdate": "2026-10-07T13:59:33.000Z"
+      "openPositionsCount": 0,
+      "lastUpdate": "2026-10-10T11:16:25.000Z"
     }
   },
   "account": {
     "login": "184175962",
     "server": "Exness-MT5Real25",
     "name": "2 percent",
-    "balance": 19760.2,
-    "equity": 19736.6,
+    "balance": 19674.28,
+    "equity": 19674.28,
     "margin": 0.0,
-    "freeMargin": 19736.6,
-    "usdBalance": 197.6,
-    "usdEquity": 197.37,
+    "freeMargin": 19674.28,
+    "usdBalance": 196.74,
+    "usdEquity": 196.74,
     "initialDeposit": 186.71,
     "nativeInitialDeposit": 18671.0,
     "totalDeposits": 186.71,
@@ -38,31 +38,12 @@
     "currency": "USC",
     "isCent": true,
     "status": "connected",
-    "openPositionsCount": 1,
-    "lastUpdate": "2026-10-07T13:59:33.000Z"
+    "openPositionsCount": 0,
+    "lastUpdate": "2026-10-10T11:16:25.000Z"
   },
-  "openPositions": [
-    {
-      "ticket": "4226512560",
-      "symbol": "XAUUSD",
-      "direction": "BUY",
-      "lotSize": 0.01,
-      "openPrice": 4119.059,
-      "currentPrice": 4095.522,
-      "stopLoss": 4013.283,
-      "takeProfit": 4283.149,
-      "profit": -0.236,
-      "nativeProfit": -23.6,
-      "openTime": "2026-10-07T09:55:19.000Z",
-      "comment": "",
-      "accountLogin": "184175962",
-      "accountServer": "Exness-MT5Real25",
-      "accountCurrency": "USC",
-      "isCent": true
-    }
-  ],
-  "totalSyncedDeals": 61,
-  "lastSync": "2026-10-07T13:59:33.000Z",
+  "openPositions": [],
+  "totalSyncedDeals": 156,
+  "lastSync": "2026-10-10T11:16:25.000Z",
   "removedAccounts": [
     "184158216"
   ]

@@ -365,6 +365,8 @@ export const TradingViewReplayChart = forwardRef<TradingViewReplayChartRef, Prop
       close: Number(c.close.toFixed(precision))
     }));
     candlestickSeriesRef.current.setData(formattedCandles);
+    // Keep chart scrolled to the rightmost candle during replay scrubbing / jump
+    chartRef.current.timeScale().scrollToPosition(0, false);
 
     // Update SL and TP Price Lines (if set on the trade)
     priceLinesRef.current.forEach(pl => {

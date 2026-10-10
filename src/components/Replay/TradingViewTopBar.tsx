@@ -9,7 +9,11 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Play,
+  Pause,
+  SkipBack,
+  SkipForward
 } from 'lucide-react';
 import { Trade } from '../../types';
 
@@ -28,8 +32,13 @@ interface Props {
   onSelectTrade?: (trade: Trade) => void;
   onRefreshCandles?: () => void;
   isSyncingCandles?: boolean;
-  chartEngine?: 'kline' | 'vela' | 'standard' | 'official_tv';
-  onCycleEngine?: () => void;
+  // Replay playback controls for top bar
+  isPlaying?: boolean;
+  onPlayToggle?: () => void;
+  onStepForward?: () => void;
+  onStepBackward?: () => void;
+  onJumpToEntry?: () => void;
+  onJumpToExit?: () => void;
 }
 
 export const TradingViewTopBar: React.FC<Props> = ({
@@ -44,8 +53,12 @@ export const TradingViewTopBar: React.FC<Props> = ({
   onSelectTrade,
   onRefreshCandles,
   isSyncingCandles = false,
-  chartEngine = 'kline',
-  onCycleEngine
+  isPlaying = false,
+  onPlayToggle,
+  onStepForward,
+  onStepBackward,
+  onJumpToEntry,
+  onJumpToExit
 }) => {
   const isCent = trade.isCent || trade.accountCurrency === 'USC';
   const profitVal = isCent ? trade.netProfit * 100 : trade.netProfit;
@@ -109,44 +122,6 @@ export const TradingViewTopBar: React.FC<Props> = ({
 
         <div className={`w-[1px] h-4 mx-1 ${isDarkTheme ? 'bg-[#2A2E39]' : 'bg-[#E0E3EB]'}`} />
 
-        {/* Engine Switcher (KLine Pro Zero-Lag / Vela PineTS / Standard / Official TV) */}
-        {onCycleEngine && (
-          <button
-            onClick={onCycleEngine}
-            title="Switch Chart Engine (KLine Pro / Vela PineTS / Standard / Official TV)"
-            className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
-              chartEngine === 'kline'
-                ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
-                : chartEngine === 'vela'
-                ? 'bg-purple-600/20 text-purple-300 border-purple-500/40 hover:bg-purple-600/30'
-                : chartEngine === 'official_tv'
-                ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30'
-                : isDarkTheme
-                ? 'bg-gray-800/80 text-gray-300 border-gray-700 hover:bg-gray-700'
-                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                chartEngine === 'kline'
-                  ? 'bg-emerald-400 animate-pulse'
-                  : chartEngine === 'vela'
-                  ? 'bg-purple-400 animate-pulse'
-                  : 'bg-blue-400'
-              }`}
-            />
-            <span>
-              {chartEngine === 'kline'
-                ? 'KLine Pro'
-                : chartEngine === 'vela'
-                ? 'Vela (PineTS)'
-                : chartEngine === 'official_tv'
-                ? 'TradingView TV'
-                : 'Standard'}
-            </span>
-          </button>
-        )}
-
         {/* Refresh / Sync MT5 Candles */}
         {onRefreshCandles && (
           <button
@@ -162,6 +137,62 @@ export const TradingViewTopBar: React.FC<Props> = ({
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCandles ? 'animate-spin text-cyan-400' : ''}`} />
             <span className="hidden md:inline">Sync MT5</span>
           </button>
+        )}
+
+        {/* Replay Controls in Top Bar */}
+        {onPlayToggle && (
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#1E222D]/90 border border-[#2A2E39] shadow-sm">
+            {onJumpToEntry && (
+              <button
+                type="button"
+                onClick={onJumpToEntry}
+                className="px-1.5 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded text-[10px] font-bold font-mono transition-colors"
+                title="Jump to Trade Entry Point"
+              >
+                Entry
+              </button>
+            )}
+            {onJumpToExit && (
+              <button
+                type="button"
+                onClick={onJumpToExit}
+                className="px-1.5 py-0.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 rounded text-[10px] font-bold font-mono transition-colors"
+                title="Jump to Trade Exit Point"
+              >
+                Exit
+              </button>
+            )}
+            <div className="w-[1px] h-3 mx-0.5 bg-[#2A2E39]" />
+            {onStepBackward && (
+              <button
+                type="button"
+                onClick={onStepBackward}
+                className="p-1 rounded hover:bg-[#2A2E39] text-gray-400 hover:text-white transition-colors"
+                title="Step Backward"
+              >
+                <SkipBack className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onPlayToggle}
+              className="px-2.5 py-0.5 bg-[#2962FF] hover:bg-blue-600 text-white font-bold rounded text-[11px] flex items-center gap-1 shadow-sm transition-all active:scale-95"
+              title={isPlaying ? "Pause Replay" : "Play Replay"}
+            >
+              {isPlaying ? <Pause className="w-3 h-3 fill-white" /> : <Play className="w-3 h-3 fill-white" />}
+              <span>{isPlaying ? 'Pause' : 'Play'}</span>
+            </button>
+            {onStepForward && (
+              <button
+                type="button"
+                onClick={onStepForward}
+                className="p-1 rounded hover:bg-[#2A2E39] text-gray-400 hover:text-white transition-colors"
+                title="Step Forward"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         )}
 
       </div>

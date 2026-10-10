@@ -1,17 +1,45 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle } from 'react';
 import ReactDOM from 'react-dom';
 import {
   Play,
   Pause,
   SkipForward,
   SkipBack,
-  Scissors
+  Scissors,
+  Code,
+  Eye,
+  EyeOff,
+  Settings,
+  X,
+  Plus,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { KLineChartPro, Datafeed, SymbolInfo, Period, DatafeedSubscribeCallback } from '@klinecharts/pro';
-import { KLineData, dispose, registerIndicator } from 'klinecharts';
+import { KLineData, dispose, registerIndicator, IndicatorSeries } from 'klinecharts';
 import '@klinecharts/pro/dist/klinecharts-pro.css';
 import { Trade } from '../../types';
 import { getSymbolPrecision, Candle } from './TradingViewReplayChart';
+import { KLinePineModal } from './KLinePineModal';
+import {
+  drawPineScene,
+  executePineScript,
+  PineSceneModel,
+  PineInputSchema,
+  PineExecutionResult
+} from './KLinePineRunner';
+import { TradingViewIndicatorSettingsModal } from './TradingViewIndicatorSettingsModal';
+
+export interface ActivePineIndicator {
+  id: string;
+  title: string;
+  code: string;
+  model: PineSceneModel;
+  visible: boolean;
+  inputSchema: PineInputSchema[];
+  userInputs: Record<string, any>;
+  createdAt: number;
+}
 
 interface Props {
   trade: Trade;
@@ -33,8 +61,9 @@ interface Props {
   onSeek?: (index: number) => void;
 }
 
-// Global active trade pointer for canvas drawing
+// Global active trade and core chart pointer for canvas drawing & direct replay navigation
 let activeTradeForKLine: Trade | null = null;
+let currentKLineChartInstance: any = null;
 
 // Detect intrinsic timeframe from candle timestamps
 function detectCandlesTimeframe(candles?: Candle[]): string | null {
@@ -61,11 +90,16 @@ function detectCandlesTimeframe(candles?: Candle[]): string | null {
 registerIndicator({
   name: 'TRADE_EXECUTIONS',
   shortName: '',
-  // @ts-expect-error series 'price' draws directly on candle pane
-  series: 'price',
+  series: IndicatorSeries.Price,
   calc: () => [],
   createTooltipDataSource: () => ({ name: '', calcParamsText: '', icons: [], values: [] }),
   draw: ({ ctx, kLineDataList, xAxis, yAxis }) => {
+    // Capture underlying core chart instance for instant replay seek/jump and direct scrolling
+    const coreChart = (xAxis as any)?.getParent?.()?.getChart?.();
+    if (coreChart) {
+      currentKLineChartInstance = coreChart;
+    }
+
     if (!activeTradeForKLine || !kLineDataList || kLineDataList.length === 0) return true;
     const trade = activeTradeForKLine;
     const entryMs = new Date(trade.openTime).getTime();
@@ -99,23 +133,23 @@ registerIndicator({
 
     ctx.save();
 
-    // 1. Draw Entry Arrow Marker (Crisp triangle, NO text covering candle)
+    // 1. Draw Entry Arrow Marker (Crisp triangle, reduced subtle size)
     const arrowColor = isBuy ? '#22c55e' : '#ef4444';
     ctx.fillStyle = arrowColor;
     ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1;
 
     ctx.beginPath();
     if (isBuy) {
-      // BUY entry: Upward pointing triangle ▲ placed below candle
-      ctx.moveTo(entryX, entryY + 4);
-      ctx.lineTo(entryX - 6, entryY + 18);
-      ctx.lineTo(entryX + 6, entryY + 18);
+      // BUY entry: Upward pointing triangle ▲ placed cleanly below candle
+      ctx.moveTo(entryX, entryY + 3);
+      ctx.lineTo(entryX - 3.5, entryY + 10);
+      ctx.lineTo(entryX + 3.5, entryY + 10);
     } else {
-      // SELL entry: Downward pointing triangle ▼ placed above candle
-      ctx.moveTo(entryX, entryY - 4);
-      ctx.lineTo(entryX - 6, entryY - 18);
-      ctx.lineTo(entryX + 6, entryY - 18);
+      // SELL entry: Downward pointing triangle ▼ placed cleanly above candle
+      ctx.moveTo(entryX, entryY - 3);
+      ctx.lineTo(entryX - 3.5, entryY - 10);
+      ctx.lineTo(entryX + 3.5, entryY - 10);
     }
     ctx.closePath();
     ctx.fill();
@@ -142,29 +176,29 @@ registerIndicator({
 
         // Dashed Connector Line between entry and exit
         ctx.beginPath();
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([3, 3]);
         ctx.strokeStyle = isWin ? '#22c55e' : '#ef4444';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.2;
         ctx.moveTo(entryX, entryY);
         ctx.lineTo(exitX, exitY);
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Exit Arrow Marker (Opposite triangle, NO text covering candle)
+        // Exit Arrow Marker (Opposite triangle, reduced subtle size)
         ctx.fillStyle = isWin ? '#22c55e' : '#ef4444';
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1;
         ctx.beginPath();
         if (isBuy) {
           // BUY trade close (sell action): downward pointing triangle ▼
-          ctx.moveTo(exitX, exitY - 4);
-          ctx.lineTo(exitX - 6, exitY - 18);
-          ctx.lineTo(exitX + 6, exitY - 18);
+          ctx.moveTo(exitX, exitY - 3);
+          ctx.lineTo(exitX - 3.5, exitY - 10);
+          ctx.lineTo(exitX + 3.5, exitY - 10);
         } else {
           // SELL trade close (buy action): upward pointing triangle ▲
-          ctx.moveTo(exitX, exitY + 4);
-          ctx.lineTo(exitX - 6, exitY + 18);
-          ctx.lineTo(exitX + 6, exitY + 18);
+          ctx.moveTo(exitX, exitY + 3);
+          ctx.lineTo(exitX - 3.5, exitY + 10);
+          ctx.lineTo(exitX + 3.5, exitY + 10);
         }
         ctx.closePath();
         ctx.fill();
@@ -209,12 +243,12 @@ registerIndicator({
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Small circle dot marker
+            // Small circle dot marker (subtle 2.5px radius)
             ctx.beginPath();
             ctx.fillStyle = pc.netProfit >= 0 ? '#22c55e' : '#ef4444';
             ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.2;
-            ctx.arc(pcX, pcY, 4, 0, Math.PI * 2);
+            ctx.lineWidth = 1;
+            ctx.arc(pcX, pcY, 2.5, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
           }
@@ -224,6 +258,53 @@ registerIndicator({
 
     ctx.restore();
     return true;
+  }
+});
+
+// Global active pine indicators pointers for canvas drawing (supports multiple indicators simultaneously)
+let activePineOverlayModels: PineSceneModel[] = [];
+let activePineSubpaneModel: PineSceneModel | null = null;
+
+// Register native Pine Script overlay indicator
+registerIndicator({
+  name: 'PINETS_OVERLAY',
+  shortName: '',
+  series: IndicatorSeries.Price,
+  calc: () => [],
+  createTooltipDataSource: () => ({ name: '', calcParamsText: '', icons: [], values: [] }),
+  draw: ({ ctx, kLineDataList, xAxis, yAxis, bounding, barSpace }) => {
+    if (!activePineOverlayModels || activePineOverlayModels.length === 0) return true;
+    return drawPineScene(activePineOverlayModels, ctx, kLineDataList, xAxis, yAxis, bounding, barSpace);
+  }
+});
+
+// Register native Pine Script sub-pane indicator (for oscillators like RSI)
+registerIndicator({
+  name: 'PINETS_SUBPANE',
+  shortName: 'Pine Script',
+  series: IndicatorSeries.Normal,
+  calc: (kLineDataList) => {
+    if (!activePineSubpaneModel || !activePineSubpaneModel.series || activePineSubpaneModel.series.length === 0) return [];
+    const timeToVal = new Map<number, number>();
+    for (const s of activePineSubpaneModel.series) {
+      for (const pt of s.points) {
+        if (pt.value !== null && Number.isFinite(pt.value)) {
+          timeToVal.set(pt.time, pt.value);
+        }
+      }
+    }
+    return kLineDataList.map(bar => ({ val: timeToVal.get(bar.timestamp) ?? null }));
+  },
+  figures: [{ key: 'val', title: '', type: 'line' }],
+  createTooltipDataSource: () => ({
+    name: activePineSubpaneModel?.title || 'Pine Indicator',
+    calcParamsText: '',
+    icons: [],
+    values: []
+  }),
+  draw: ({ ctx, kLineDataList, xAxis, yAxis, bounding, barSpace }) => {
+    if (!activePineSubpaneModel) return true;
+    return drawPineScene(activePineSubpaneModel, ctx, kLineDataList, xAxis, yAxis, bounding, barSpace);
   }
 });
 
@@ -382,6 +463,8 @@ const KLineReplayBarInline: React.FC<{
   onReset?: () => void;
   onSpeedChange?: (speed: number) => void;
   onSeek?: (index: number) => void;
+  onOpenPineEditor?: () => void;
+  hasActivePine?: boolean;
 }> = ({
   candles = [],
   currentIndex,
@@ -395,7 +478,9 @@ const KLineReplayBarInline: React.FC<{
   onJumpToExit,
   onReset,
   onSpeedChange,
-  onSeek
+  onSeek,
+  onOpenPineEditor,
+  hasActivePine = false
 }) => {
   const currentCandle = candles && currentIndex !== undefined ? candles[currentIndex] : undefined;
   const isBuy = trade.direction === 'BUY';
@@ -436,6 +521,26 @@ const KLineReplayBarInline: React.FC<{
 
   return (
     <div className="flex items-center gap-1.5 ml-2.5 px-2 py-0.5 border-l border-[#2A2E39] select-none text-xs font-sans h-full">
+      {/* Pine Script Indicator Studio Button */}
+      {onOpenPineEditor && (
+        <button
+          type="button"
+          onClick={onOpenPineEditor}
+          className={`px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+            hasActivePine
+              ? 'bg-blue-600/25 hover:bg-blue-600/35 text-blue-400 border border-blue-500/40'
+              : 'bg-[#2A2E39] hover:bg-[#363C4E] text-gray-300 hover:text-white border border-transparent'
+          }`}
+          title="Open Pine Script Indicator Studio (Compile & Add Indicators)"
+        >
+          <Code className="w-3.5 h-3.5 text-blue-400" />
+          <span>Pine Script</span>
+          {hasActivePine && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
+      )}
+
       {/* Jump Button */}
       {onReset && (
         <button
@@ -556,7 +661,14 @@ const KLineReplayBarInline: React.FC<{
   );
 };
 
-export const KLineReplayChart: React.FC<Props> = ({
+export interface KLineReplayChartRef {
+  scrollToTime: (timestampSec: number) => void;
+  scrollToRealTime: () => void;
+  jumpToEntry: () => void;
+  jumpToExit: () => void;
+}
+
+export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
   trade,
   candles,
   timeframe = '5m',
@@ -573,15 +685,332 @@ export const KLineReplayChart: React.FC<Props> = ({
   onReset,
   onSpeedChange,
   onSeek
-}) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartProRef = useRef<KLineChartPro | null>(null);
   const datafeedRef = useRef<KLineMT5Datafeed | null>(null);
   const prevIndexRef = useRef<number | undefined>(currentIndex);
   const [portalHost, setPortalHost] = useState<HTMLDivElement | null>(null);
 
+  // Expose imperative chart controls to parent modal
+  useImperativeHandle(ref, () => ({
+    scrollToTime: (timestampSec: number) => {
+      if (currentKLineChartInstance) {
+        try {
+          currentKLineChartInstance.scrollToTimestamp(timestampSec * 1000);
+        } catch {}
+      }
+    },
+    scrollToRealTime: () => {
+      if (currentKLineChartInstance) {
+        try {
+          currentKLineChartInstance.scrollToRealTime();
+        } catch {}
+      }
+    },
+    jumpToEntry: () => {
+      onJumpToEntry?.();
+    },
+    jumpToExit: () => {
+      onJumpToExit?.();
+    }
+  }));
+
+  // Pine Script Indicator Studio Multi-Indicator State
+  const [isPineModalOpen, setIsPineModalOpen] = useState(false);
+  const [activeIndicators, setActiveIndicators] = useState<ActivePineIndicator[]>(() => {
+    try {
+      const savedV2 = localStorage.getItem('kline_active_pine_indicators_v2');
+      if (savedV2) {
+        const parsed = JSON.parse(savedV2);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item: any) => ({
+            ...item,
+            model: item.model || { id: item.id, title: item.title, overlay: true, series: [], boxes: [], lines: [], labels: [], fills: [], priceLines: [], backgrounds: [] },
+            visible: item.visible ?? true,
+            inputSchema: item.inputSchema || [],
+            userInputs: item.userInputs || {}
+          }));
+        }
+      }
+      // Migrate from old single-code storage if present
+      const oldCode = localStorage.getItem('kline_active_pine_code');
+      const oldTitle = localStorage.getItem('kline_active_pine_title') || 'Pine Script';
+      if (oldCode && oldCode.trim()) {
+        return [{
+          id: `pine_${Date.now()}`,
+          title: oldTitle,
+          code: oldCode,
+          model: { id: 'old', title: oldTitle, overlay: true, series: [], boxes: [], lines: [], labels: [], fills: [], priceLines: [], backgrounds: [] },
+          visible: true,
+          inputSchema: [],
+          userInputs: {},
+          createdAt: Date.now()
+        }];
+      }
+    } catch {}
+    return [];
+  });
+
+  const [editingIndicator, setEditingIndicator] = useState<ActivePineIndicator | null>(null);
+  const [editorInitialCode, setEditorInitialCode] = useState<string | null>(null);
+  const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
+
+  const [isCompilingPine, setIsCompilingPine] = useState(false);
+  const [pineStatusMessage, setPineStatusMessage] = useState<string | null>(null);
+  const [pineStatusType, setPineStatusType] = useState<'success' | 'error' | null>(null);
+
   const cleanSymbol = trade.symbol.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   const precision = getSymbolPrecision(cleanSymbol);
+
+  // Sync canvas overlay models from indicators list
+  const syncGlobalOverlayModels = (indicators: ActivePineIndicator[]) => {
+    activePineOverlayModels = indicators
+      .filter(i => i.visible && i.model && i.model.overlay)
+      .map(i => i.model);
+
+    try {
+      const toSave = indicators.map(i => ({
+        id: i.id,
+        title: i.title,
+        code: i.code,
+        visible: i.visible,
+        inputSchema: i.inputSchema,
+        userInputs: i.userInputs,
+        createdAt: i.createdAt
+      }));
+      localStorage.setItem('kline_active_pine_indicators_v2', JSON.stringify(toSave));
+    } catch {}
+  };
+
+  // Repaint KLine chart
+  const triggerChartRedraw = () => {
+    if (currentKLineChartInstance && typeof currentKLineChartInstance.applyNewData === 'function') {
+      try {
+        const curData = currentKLineChartInstance.getDataList();
+        if (curData && curData.length > 0) {
+          currentKLineChartInstance.applyNewData(curData);
+        }
+      } catch {}
+    }
+  };
+
+  // Helper to extract recent candles window for fast execution
+  const getCandlesWindow = (candleList: Candle[], targetIndex?: number, maxBars = 500) => {
+    const limit = targetIndex !== undefined && targetIndex >= 0 ? targetIndex + 1 : candleList.length;
+    const startIdx = Math.max(0, limit - maxBars);
+    const subset = candleList.slice(startIdx, limit);
+    const bars = subset.map(c => ({
+      time: c.time * 1000,
+      open: Number(c.open),
+      high: Number(c.high),
+      low: Number(c.low),
+      close: Number(c.close),
+      volume: Number(c.volume || c.tick_volume || 0)
+    })).sort((a, b) => a.time - b.time);
+    return { bars, startIdx };
+  };
+
+  // Execute single script against current candles
+  const executeIndicator = async (
+    code: string,
+    userInputs?: Record<string, any>,
+    targetCandles?: Candle[],
+    targetIndex?: number
+  ): Promise<PineExecutionResult> => {
+    let candleList = targetCandles || candles;
+
+    if (!candleList || candleList.length === 0) {
+      const chartApi = (chartProRef.current as any)?._chartApi;
+      const chartData = chartApi?.getDataList?.();
+      if (chartData && Array.isArray(chartData) && chartData.length > 0) {
+        candleList = chartData.map((d: any) => ({
+          time: Math.floor(d.timestamp / 1000),
+          open: Number(d.open),
+          high: Number(d.high),
+          low: Number(d.low),
+          close: Number(d.close),
+          volume: Number(d.volume || 0)
+        }));
+      }
+    }
+
+    if (!candleList || candleList.length === 0) {
+      try {
+        const res = await fetch(`/api/candles?symbol=${encodeURIComponent(cleanSymbol)}&timeframe=${encodeURIComponent(timeframe)}&all=true`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.candles && Array.isArray(json.candles) && json.candles.length > 0) {
+            candleList = json.candles;
+          }
+        }
+      } catch (err) {
+        console.warn('[KLinePine] Fallback candle fetch failed:', err);
+      }
+    }
+
+    if (!candleList || candleList.length === 0) {
+      throw new Error(`No candle data loaded for ${cleanSymbol} (${timeframe}). Please wait for chart bars to load before compiling.`);
+    }
+
+    const { bars, startIdx } = getCandlesWindow(candleList, targetIndex);
+    return await executePineScript(code, bars, timeframe, cleanSymbol, precision, startIdx, userInputs);
+  };
+
+  const handleRunPineScript = async (codeToRun: string) => {
+    setIsCompilingPine(true);
+    setPineStatusMessage('Compiling Pine Script & executing on replay candles...');
+    setPineStatusType(null);
+
+    await new Promise(r => setTimeout(r, 60));
+
+    try {
+      const result = await executeIndicator(codeToRun, undefined, candles, currentIndex);
+      const title = result.model.title || 'Pine Script';
+      const id = `pine_${title.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+
+      setActiveIndicators(prev => {
+        const existingIdx = prev.findIndex(i => i.id === id || i.title === title);
+        const newEntry: ActivePineIndicator = {
+          id,
+          title,
+          code: codeToRun,
+          model: result.model,
+          visible: true,
+          inputSchema: result.inputSchema,
+          userInputs: result.defaultInputs,
+          createdAt: Date.now()
+        };
+
+        let updated: ActivePineIndicator[];
+        if (existingIdx >= 0) {
+          updated = [...prev];
+          updated[existingIdx] = newEntry;
+        } else {
+          updated = [...prev, newEntry];
+        }
+
+        syncGlobalOverlayModels(updated);
+        return updated;
+      });
+
+      triggerChartRedraw();
+
+      const plotsCount = result.model.series?.length || 0;
+      const boxesCount = result.model.boxes?.length || 0;
+      const linesCount = result.model.lines?.length || 0;
+      const tablesCount = result.model.tables?.length || 0;
+      const labelsCount = result.model.labels?.length || 0;
+
+      const details = [];
+      if (linesCount > 0) details.push(`${linesCount} lines`);
+      if (boxesCount > 0) details.push(`${boxesCount} boxes`);
+      if (tablesCount > 0) details.push(`${tablesCount} HUD table${tablesCount > 1 ? 's' : ''}`);
+      if (labelsCount > 0) details.push(`${labelsCount} labels`);
+      if (plotsCount > 0) details.push(`${plotsCount} plots`);
+
+      setPineStatusType('success');
+      setPineStatusMessage(`✓ "${title}" added to chart successfully${details.length > 0 ? ` (${details.join(', ')})` : ''}!`);
+    } catch (err: any) {
+      console.error('[KLinePine] Compilation failed:', err);
+      setPineStatusType('error');
+      setPineStatusMessage(`Error: ${err.message || 'Script compilation failed'}`);
+    } finally {
+      setIsCompilingPine(false);
+    }
+  };
+
+  const handleApplyIndicatorInputs = async (newInputs: Record<string, any>) => {
+    if (!editingIndicator) return;
+    const targetId = editingIndicator.id;
+
+    try {
+      setIsCompilingPine(true);
+      setPineStatusMessage(`Applying settings to "${editingIndicator.title}"...`);
+      const result = await executeIndicator(
+        editingIndicator.code,
+        newInputs,
+        candles,
+        currentIndex
+      );
+
+      setActiveIndicators(prev => {
+        const updated = prev.map(ind => {
+          if (ind.id === targetId) {
+            return {
+              ...ind,
+              model: result.model,
+              inputSchema: result.inputSchema,
+              userInputs: newInputs
+            };
+          }
+          return ind;
+        });
+        syncGlobalOverlayModels(updated);
+        return updated;
+      });
+
+      triggerChartRedraw();
+      setPineStatusType('success');
+      setPineStatusMessage(`✓ Updated "${editingIndicator.title}" settings!`);
+    } catch (err: any) {
+      setPineStatusType('error');
+      setPineStatusMessage(`Failed to update settings: ${err.message}`);
+    } finally {
+      setIsCompilingPine(false);
+    }
+  };
+
+  const handleToggleIndicatorVisibility = (id: string) => {
+    setActiveIndicators(prev => {
+      const updated = prev.map(ind => ind.id === id ? { ...ind, visible: !ind.visible } : ind);
+      syncGlobalOverlayModels(updated);
+      triggerChartRedraw();
+      return updated;
+    });
+  };
+
+  const handleRemoveIndicator = (id: string) => {
+    setActiveIndicators(prev => {
+      const updated = prev.filter(ind => ind.id !== id);
+      syncGlobalOverlayModels(updated);
+      triggerChartRedraw();
+      return updated;
+    });
+  };
+
+  const handleRemoveAllIndicators = () => {
+    setActiveIndicators([]);
+    activePineOverlayModels = [];
+    activePineSubpaneModel = null;
+    localStorage.removeItem('kline_active_pine_indicators_v2');
+    localStorage.removeItem('kline_active_pine_code');
+    localStorage.removeItem('kline_active_pine_title');
+
+    const chartApi = (chartProRef.current as any)?._chartApi;
+    if (chartApi) {
+      try {
+        const panes = chartApi.getIndicatorByPaneId();
+        if (panes) {
+          panes.forEach((_: any, paneId: string) => {
+            if (paneId !== 'candle_pane') {
+              chartApi.removeIndicator(paneId, 'PINETS_SUBPANE');
+            }
+          });
+        }
+      } catch {}
+      if (typeof chartApi.applyNewData === 'function') {
+        chartApi.applyNewData(chartApi.getDataList());
+      }
+    }
+
+    setPineStatusType('success');
+    setPineStatusMessage('All indicators removed from chart');
+    setTimeout(() => {
+      setPineStatusMessage(null);
+      setPineStatusType(null);
+    }, 2000);
+  };
 
   // Map timeframe string ('1m', '5m', '15m', '1h', '4h', '1d', etc.) to KLine Period
   const tfToPeriod = (tf: string): Period => {
@@ -658,7 +1087,7 @@ export const KLineReplayChart: React.FC<Props> = ({
       locale: 'en-US',
       drawingBarVisible: true,
       watermark: '',
-      mainIndicators: ['TRADE_EXECUTIONS'],
+      mainIndicators: ['TRADE_EXECUTIONS', 'PINETS_OVERLAY'],
       subIndicators: [],
       styles: {
         indicator: {
@@ -680,14 +1109,14 @@ export const KLineReplayChart: React.FC<Props> = ({
         },
         candle: {
           bar: {
-            upColor: '#22c55e',
-            downColor: '#ef4444',
+            upColor: '#78C279',
+            downColor: '#4E525D',
             noChangeColor: '#888888',
-            upBorderColor: '#22c55e',
-            downBorderColor: '#ef4444',
+            upBorderColor: '#78C279',
+            downBorderColor: '#4E525D',
             noChangeBorderColor: '#888888',
-            upWickColor: '#22c55e',
-            downWickColor: '#ef4444',
+            upWickColor: '#78C279',
+            downWickColor: '#4E525D',
             noChangeWickColor: '#888888'
           }
         }
@@ -780,18 +1209,116 @@ export const KLineReplayChart: React.FC<Props> = ({
       const subset = candles.slice(0, currentIndex + 1);
       const kLineDataList: KLineData[] = subset.map(c => ({
         timestamp: c.time * 1000,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume || 0
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+        volume: Number(c.volume || c.tick_volume || 0)
       }));
-      const chartApi = (chartProRef.current as any)?._chartApi;
-      if (chartApi && typeof chartApi.applyNewData === 'function') {
-        chartApi.applyNewData(kLineDataList);
+
+      if (currentKLineChartInstance && typeof currentKLineChartInstance.applyNewData === 'function') {
+        currentKLineChartInstance.applyNewData(kLineDataList);
+        setTimeout(() => {
+          try {
+            currentKLineChartInstance.scrollToRealTime();
+          } catch {}
+        }, 15);
+      } else if (chartProRef.current) {
+        try {
+          const curPeriod = chartProRef.current.getPeriod();
+          chartProRef.current.setPeriod({ ...curPeriod });
+        } catch {}
       }
     }
   }, [currentIndex, candles]);
+
+  // Re-evaluate all active indicators when replay position changes
+  const isEvaluatingPineRef = useRef(false);
+  const pendingPineIndexRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (activeIndicators.length === 0 || !candles || candles.length === 0) return;
+
+    const executeAllStep = async (targetIdx?: number) => {
+      if (isEvaluatingPineRef.current) {
+        pendingPineIndexRef.current = targetIdx ?? null;
+        return;
+      }
+      isEvaluatingPineRef.current = true;
+
+      try {
+        const visibleInds = activeIndicators.filter(i => i.visible);
+        if (visibleInds.length > 0) {
+          const { bars, startIdx } = getCandlesWindow(candles, targetIdx);
+          const updatedModels: PineSceneModel[] = [];
+
+          for (const ind of visibleInds) {
+            try {
+              const res = await executePineScript(
+                ind.code,
+                bars,
+                timeframe,
+                cleanSymbol,
+                precision,
+                startIdx,
+                ind.userInputs
+              );
+              ind.model = res.model;
+              if (res.model.overlay) {
+                updatedModels.push(res.model);
+              }
+            } catch (e) {
+              console.warn(`[KLinePine] Eval error for ${ind.title}:`, e);
+            }
+          }
+
+          activePineOverlayModels = updatedModels;
+          triggerChartRedraw();
+        }
+      } catch (err) {
+        console.warn('[KLinePine] Replay eval error:', err);
+      } finally {
+        isEvaluatingPineRef.current = false;
+        if (pendingPineIndexRef.current !== null) {
+          const nextIdx = pendingPineIndexRef.current;
+          pendingPineIndexRef.current = null;
+          executeAllStep(nextIdx);
+        }
+      }
+    };
+
+    if (isPlaying) {
+      executeAllStep(currentIndex);
+    } else {
+      const timer = setTimeout(() => {
+        executeAllStep(currentIndex);
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [currentIndex, candles, activeIndicators.length, timeframe, isPlaying]);
+
+  // Initial load evaluation for active indicators
+  useEffect(() => {
+    if (activeIndicators.length > 0 && candles && candles.length > 0) {
+      const visibleInds = activeIndicators.filter(i => i.visible);
+      if (visibleInds.length > 0) {
+        const { bars, startIdx } = getCandlesWindow(candles, currentIndex);
+        Promise.all(
+          visibleInds.map(ind =>
+            executePineScript(ind.code, bars, timeframe, cleanSymbol, precision, startIdx, ind.userInputs)
+              .then(res => {
+                ind.model = res.model;
+                return res.model;
+              })
+              .catch(() => null)
+          )
+        ).then(models => {
+          activePineOverlayModels = models.filter((m): m is PineSceneModel => m !== null && !!m.overlay);
+          triggerChartRedraw();
+        });
+      }
+    }
+  }, [timeframe]);
 
   return (
     <div className="w-full h-full relative min-w-0 min-h-0 select-none overflow-hidden">
@@ -800,6 +1327,124 @@ export const KLineReplayChart: React.FC<Props> = ({
         className="w-full h-full min-w-0 min-h-0"
         style={{ minHeight: '400px' }}
       />
+
+      {/* Authentic TradingView Indicator Legend (Picture 1 style: NO bg, NO rounded box) */}
+      {activeIndicators.length > 0 && (
+        <div className="absolute top-9 left-12 z-20 flex flex-col gap-0.5 select-none pointer-events-auto">
+          {!isLegendCollapsed && (
+            <div className="flex flex-col gap-0.5">
+              {activeIndicators.map((ind) => (
+                <div
+                  key={ind.id}
+                  className="group flex items-center gap-1.5 py-0.5 px-0.5 bg-transparent cursor-default"
+                >
+                  {/* Indicator Title */}
+                  <span
+                    className={`text-[13px] font-medium tracking-normal transition-colors select-none ${
+                      ind.visible
+                        ? 'text-[#D1D4DC] hover:text-white'
+                        : 'text-[#787B86]'
+                    }`}
+                    title={ind.title}
+                  >
+                    {ind.title}
+                  </span>
+
+                  {/* If indicator is hidden and not hovered, show the EyeOff icon permanently (like Picture 1) */}
+                  {!ind.visible && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleIndicatorVisibility(ind.id);
+                      }}
+                      className="group-hover:hidden text-[#787B86] hover:text-[#D1D4DC] transition-colors p-0.5"
+                      title="Show indicator"
+                    >
+                      <EyeOff className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {/* Action Icons (TradingView hover buttons: Eye, Settings ⚙️, Code {}, Remove ✕) */}
+                  <div className="hidden group-hover:flex items-center gap-1 transition-opacity">
+                    {/* Visibility Toggle */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleIndicatorVisibility(ind.id);
+                      }}
+                      className="text-[#787B86] hover:text-[#D1D4DC] transition-colors p-0.5"
+                      title={ind.visible ? "Hide indicator" : "Show indicator"}
+                    >
+                      {ind.visible ? (
+                        <Eye className="w-3.5 h-3.5" />
+                      ) : (
+                        <EyeOff className="w-3.5 h-3.5 text-[#787B86]" />
+                      )}
+                    </button>
+
+                    {/* Settings Gear ⚙️ -> TradingView Indicator Settings Modal */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingIndicator(ind);
+                      }}
+                      className="text-[#787B86] hover:text-[#D1D4DC] transition-colors p-0.5"
+                      title="Settings"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* View / Edit Code in Studio */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditorInitialCode(ind.code);
+                        setIsPineModalOpen(true);
+                      }}
+                      className="text-[#787B86] hover:text-[#D1D4DC] transition-colors p-0.5"
+                      title="Source code"
+                    >
+                      <Code className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Remove Indicator ✕ */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveIndicator(ind.id);
+                      }}
+                      className="text-[#787B86] hover:text-red-400 transition-colors p-0.5"
+                      title="Remove"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* TradingView Collapse / Expand Chevron (shown in Picture 1) */}
+          <button
+            type="button"
+            onClick={() => setIsLegendCollapsed(!isLegendCollapsed)}
+            className="w-5 h-5 flex items-center justify-center text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39]/40 rounded transition-colors"
+            title={isLegendCollapsed ? "Show indicator list" : "Hide indicator list"}
+          >
+            {isLegendCollapsed ? (
+              <ChevronDown className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Portal replay bar directly into .klinecharts-pro-period-bar next to "Full Screen" */}
       {portalHost && ReactDOM.createPortal(
         <KLineReplayBarInline
@@ -816,9 +1461,45 @@ export const KLineReplayChart: React.FC<Props> = ({
           onReset={onReset}
           onSpeedChange={onSpeedChange}
           onSeek={onSeek}
+          onOpenPineEditor={() => {
+            setEditorInitialCode(null);
+            setIsPineModalOpen(true);
+          }}
+          hasActivePine={activeIndicators.length > 0}
         />,
         portalHost
       )}
+
+      {/* TradingView Authentic Indicator Settings Modal */}
+      {editingIndicator && (
+        <TradingViewIndicatorSettingsModal
+          isOpen={true}
+          title={editingIndicator.title}
+          inputSchema={editingIndicator.inputSchema}
+          currentInputs={editingIndicator.userInputs}
+          onClose={() => setEditingIndicator(null)}
+          onApply={handleApplyIndicatorInputs}
+        />
+      )}
+
+      {/* Pine Script Indicator Studio Modal */}
+      <KLinePineModal
+        isOpen={isPineModalOpen}
+        onClose={() => {
+          setIsPineModalOpen(false);
+          setEditorInitialCode(null);
+        }}
+        onRunScript={handleRunPineScript}
+        onRemoveScript={handleRemoveAllIndicators}
+        hasActiveIndicator={activeIndicators.length > 0}
+        activeIndicatorTitle={activeIndicators.map(i => i.title).join(', ') || null}
+        isCompiling={isCompilingPine}
+        statusMessage={pineStatusMessage}
+        statusType={pineStatusType}
+        initialCode={editorInitialCode}
+      />
     </div>
   );
-};
+});
+
+KLineReplayChart.displayName = 'KLineReplayChart';

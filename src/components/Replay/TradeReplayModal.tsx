@@ -27,16 +27,12 @@ import {
   Moon
 } from 'lucide-react';
 import { Trade } from '../../types';
-import { TradingViewReplayChart, Candle, TradingViewReplayChartRef, ChartTheme, getSymbolPrecision } from './TradingViewReplayChart';
+import { Candle, ChartTheme, getSymbolPrecision } from './TradingViewReplayChart';
 import { TradingViewGoToModal } from './TradingViewGoToModal';
 import { TradingViewTopBar } from './TradingViewTopBar';
 import { TradingViewReplayBar } from './TradingViewReplayBar';
 import { TradingViewRightDock } from './TradingViewRightDock';
-import { OfficialTradingViewChart, OfficialTradingViewChartRef } from './OfficialTradingViewChart';
-import { KLineReplayChart } from './KLineReplayChart';
-import { VelaReplayChart } from './VelaReplayChart';
-
-type ChartEngine = 'kline' | 'vela' | 'standard' | 'official_tv';
+import { KLineReplayChart, KLineReplayChartRef } from './KLineReplayChart';
 
 interface Props {
   isOpen: boolean;
@@ -67,38 +63,10 @@ export const TradeReplayModal: React.FC<Props> = ({
   const [isGoToOpen, setIsGoToOpen] = useState<boolean>(false);
   const [theme, setTheme] = useState<ChartTheme>('dark'); // Default to authentic TradingView Dark theme
   const [rightDockTab, setRightDockTab] = useState<'details' | 'notes' | 'drawings' | null>(null);
-  
-  const [chartEngine, setChartEngine] = useState<ChartEngine>(() => {
-    const saved = localStorage.getItem('replay_chart_engine') as ChartEngine | null;
-    if (saved === 'standard' || saved === 'official_tv' || saved === 'kline' || saved === 'vela') return saved;
-    return 'kline'; // Default to KLineChart Pro!
-  });
-
-  const officialTvRef = useRef<OfficialTradingViewChartRef>(null);
-
-  const handleCycleEngine = () => {
-    setChartEngine(prev => {
-      let next: ChartEngine = 'kline';
-      if (prev === 'kline') next = 'vela';
-      else if (prev === 'vela') next = 'standard';
-      else if (prev === 'standard') next = 'official_tv';
-      else if (prev === 'official_tv') next = 'kline';
-      localStorage.setItem('replay_chart_engine', next);
-      return next;
-    });
-  };
 
   const precision = getSymbolPrecision(trade.symbol);
 
-  const [hoveredCandle, setHoveredCandle] = useState<{
-    time: string;
-    open: string;
-    high: string;
-    low: string;
-    close: string;
-  } | null>(null);
-
-  const chartRef = useRef<TradingViewReplayChartRef>(null);
+  const chartRef = useRef<KLineReplayChartRef>(null);
   const playTimerRef = useRef<NodeJS.Timeout | null>(null);
   const activeReplayTimestampRef = useRef<number | null>(null);
   const activeReplayPriceRef = useRef<number | null>(null);
@@ -351,21 +319,44 @@ export const TradeReplayModal: React.FC<Props> = ({
   };
 
   const handleJumpToEntry = () => {
+    if (!trade || !candles || candles.length === 0) return;
     const entrySec = Math.floor(new Date(trade.openTime).getTime() / 1000);
-    const idx = candles.findIndex(c => c.time >= entrySec);
-    if (idx >= 0) {
-      setIsPlaying(false);
-      setCurrentIndex(idx);
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < candles.length; i++) {
+      const diff = Math.abs(candles[i].time - entrySec);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
     }
+    setIsPlaying(false);
+    setCurrentIndex(closestIdx);
+    setTimeout(() => {
+      chartRef.current?.scrollToRealTime();
+      chartRef.current?.scrollToTime(entrySec);
+    }, 30);
   };
 
   const handleJumpToExit = () => {
-    const exitSec = Math.floor(new Date(trade.closeTime).getTime() / 1000);
-    const idx = candles.findIndex(c => c.time >= exitSec);
-    if (idx >= 0) {
-      setIsPlaying(false);
-      setCurrentIndex(idx);
+    if (!trade || !candles || candles.length === 0) return;
+    const exitTimeStr = trade.closeTime || trade.openTime;
+    const exitSec = Math.floor(new Date(exitTimeStr).getTime() / 1000);
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < candles.length; i++) {
+      const diff = Math.abs(candles[i].time - exitSec);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
     }
+    setIsPlaying(false);
+    setCurrentIndex(closestIdx);
+    setTimeout(() => {
+      chartRef.current?.scrollToRealTime();
+      chartRef.current?.scrollToTime(exitSec);
+    }, 30);
   };
 
   const isBuy = trade.direction === 'BUY';
@@ -396,7 +387,6 @@ export const TradeReplayModal: React.FC<Props> = ({
             activeReplayPriceRef.current = candles[currentIndex].close;
           }
           setTimeframe(tf);
-          officialTvRef.current?.setResolution(tf);
         }}
         isDarkTheme={theme === 'dark'}
         onThemeToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -409,8 +399,18 @@ export const TradeReplayModal: React.FC<Props> = ({
         onSelectTrade={onSelectTrade}
         onRefreshCandles={() => loadCandles(true)}
         isSyncingCandles={isSyncingMT5}
-        chartEngine={chartEngine}
-        onCycleEngine={handleCycleEngine}
+        isPlaying={isPlaying}
+        onPlayToggle={() => setIsPlaying(p => !p)}
+        onStepForward={() => {
+          setIsPlaying(false);
+          setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
+        }}
+        onStepBackward={() => {
+          setIsPlaying(false);
+          setCurrentIndex(prev => Math.max(0, prev - 1));
+        }}
+        onJumpToEntry={handleJumpToEntry}
+        onJumpToExit={handleJumpToExit}
       />
 
       {/* MAIN BODY: Chart Canvas + Right Drawer */}
@@ -419,77 +419,7 @@ export const TradeReplayModal: React.FC<Props> = ({
           {/* Replay Chart Container */}
           <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden relative">
             
-            {chartEngine === 'kline' ? (
-              <div className="flex-1 min-h-0 w-full relative">
-                <KLineReplayChart
-                  trade={trade}
-                  candles={candles}
-                  timeframe={timeframe}
-                  theme={theme === 'dark' ? 'dark' : 'light'}
-                  currentIndex={currentIndex}
-                  onTimeframeChange={setTimeframe}
-                  isPlaying={isPlaying}
-                  speed={speed}
-                  onPlayToggle={() => setIsPlaying(p => !p)}
-                  onStepForward={() => {
-                    setIsPlaying(false);
-                    setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
-                  }}
-                  onStepBackward={() => {
-                    setIsPlaying(false);
-                    setCurrentIndex(prev => Math.max(0, prev - 1));
-                  }}
-                  onJumpToEntry={handleJumpToEntry}
-                  onJumpToExit={handleJumpToExit}
-                  onReset={handleJumpToEntry}
-                  onSpeedChange={setSpeed}
-                  onSeek={(index) => {
-                    setIsPlaying(false);
-                    setCurrentIndex(index);
-                  }}
-                />
-              </div>
-            ) : chartEngine === 'vela' ? (
-              <div className="flex-1 min-h-0 w-full relative">
-                <VelaReplayChart
-                  trade={trade}
-                  candles={candles}
-                  timeframe={timeframe}
-                  theme={theme === 'dark' ? 'dark' : 'light'}
-                  currentIndex={currentIndex}
-                  onTimeframeChange={setTimeframe}
-                  isPlaying={isPlaying}
-                  speed={speed}
-                  onPlayToggle={() => setIsPlaying(p => !p)}
-                  onStepForward={() => {
-                    setIsPlaying(false);
-                    setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
-                  }}
-                  onStepBackward={() => {
-                    setIsPlaying(false);
-                    setCurrentIndex(prev => Math.max(0, prev - 1));
-                  }}
-                  onJumpToEntry={handleJumpToEntry}
-                  onJumpToExit={handleJumpToExit}
-                  onReset={handleJumpToEntry}
-                  onSpeedChange={setSpeed}
-                  onSeek={(index) => {
-                    setIsPlaying(false);
-                    setCurrentIndex(index);
-                  }}
-                />
-              </div>
-            ) : chartEngine === 'official_tv' ? (
-              <div className="flex-1 min-h-0 w-full relative">
-                <OfficialTradingViewChart
-                  ref={officialTvRef}
-                  trade={trade}
-                  timeframe={timeframe}
-                  isDarkTheme={theme === 'dark'}
-                  onFallbackRequested={() => setChartEngine('kline')}
-                />
-              </div>
-            ) : isLoading ? (
+            {isLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400 bg-white dark:bg-[#0B0F19]">
                 <Zap className="w-8 h-8 text-emerald-500 animate-spin" />
                 <span className="text-xs font-bold font-mono text-gray-700 dark:text-gray-300">Loading Historical Broker Candles for {trade.symbol}...</span>
@@ -501,15 +431,58 @@ export const TradeReplayModal: React.FC<Props> = ({
               </div>
             ) : (
               <div className="flex-1 min-h-0 w-full relative">
-                <TradingViewReplayChart
+                <KLineReplayChart
                   ref={chartRef}
-                  candles={candles}
-                  visibleCount={currentIndex + 1}
                   trade={trade}
-                  theme={theme}
-                  onCrosshairMove={setHoveredCandle}
-                  onScrollNearStart={handleFetchOlderCandles}
-                  onOpenGoTo={() => setIsGoToOpen(true)}
+                  candles={candles}
+                  timeframe={timeframe}
+                  theme={theme === 'dark' ? 'dark' : 'light'}
+                  currentIndex={currentIndex}
+                  onTimeframeChange={setTimeframe}
+                  isPlaying={isPlaying}
+                  speed={speed}
+                  onPlayToggle={() => setIsPlaying(p => !p)}
+                  onStepForward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
+                  }}
+                  onStepBackward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.max(0, prev - 1));
+                  }}
+                  onJumpToEntry={handleJumpToEntry}
+                  onJumpToExit={handleJumpToExit}
+                  onReset={handleJumpToEntry}
+                  onSpeedChange={setSpeed}
+                  onSeek={(index) => {
+                    setIsPlaying(false);
+                    setCurrentIndex(index);
+                  }}
+                />
+                <TradingViewReplayBar
+                  candles={candles}
+                  currentIndex={currentIndex}
+                  isPlaying={isPlaying}
+                  speed={speed}
+                  trade={trade}
+                  onPlayToggle={() => setIsPlaying(p => !p)}
+                  onStepForward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.min(candles.length - 1, prev + 1));
+                  }}
+                  onStepBackward={() => {
+                    setIsPlaying(false);
+                    setCurrentIndex(prev => Math.max(0, prev - 1));
+                  }}
+                  onJumpToEntry={handleJumpToEntry}
+                  onJumpToExit={handleJumpToExit}
+                  onReset={handleJumpToEntry}
+                  onSpeedChange={setSpeed}
+                  onSeek={(index) => {
+                    setIsPlaying(false);
+                    setCurrentIndex(index);
+                  }}
+                  isDarkTheme={theme === 'dark'}
                 />
               </div>
             )}
