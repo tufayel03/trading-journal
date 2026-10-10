@@ -265,12 +265,51 @@ registerIndicator({
 let activePineOverlayModels: PineSceneModel[] = [];
 let activePineSubpaneModel: PineSceneModel | null = null;
 
-// Register native Pine Script overlay indicator
+// Register native Pine Script overlay indicator (incorporates HTF candle bounds into price scale)
 registerIndicator({
   name: 'PINETS_OVERLAY',
   shortName: '',
   series: IndicatorSeries.Price,
-  calc: () => [],
+  calc: (kLineDataList, indicator) => {
+    if (activePineOverlayModels && activePineOverlayModels.length > 0) {
+      let pineMin = Infinity;
+      let pineMax = -Infinity;
+      for (const model of activePineOverlayModels) {
+        if (!model) continue;
+        if (model.boxes) {
+          for (const b of model.boxes) {
+            if (Number.isFinite(b.top)) pineMax = Math.max(pineMax, b.top);
+            if (Number.isFinite(b.bottom)) pineMin = Math.min(pineMin, b.bottom);
+          }
+        }
+        if (model.lines) {
+          for (const l of model.lines) {
+            if (Number.isFinite(l.y1)) {
+              pineMin = Math.min(pineMin, l.y1);
+              pineMax = Math.max(pineMax, l.y1);
+            }
+            if (Number.isFinite(l.y2)) {
+              pineMin = Math.min(pineMin, l.y2);
+              pineMax = Math.max(pineMax, l.y2);
+            }
+          }
+        }
+        if (model.labels) {
+          for (const lbl of model.labels) {
+            if (Number.isFinite(lbl.y)) {
+              pineMin = Math.min(pineMin, lbl.y);
+              pineMax = Math.max(pineMax, lbl.y);
+            }
+          }
+        }
+      }
+      if (pineMin !== Infinity && pineMax !== -Infinity) {
+        indicator.minValue = pineMin;
+        indicator.maxValue = pineMax;
+      }
+    }
+    return [];
+  },
   createTooltipDataSource: () => ({ name: '', calcParamsText: '', icons: [], values: [] }),
   draw: ({ ctx, kLineDataList, xAxis, yAxis, bounding, barSpace }) => {
     if (!activePineOverlayModels || activePineOverlayModels.length === 0) return true;
@@ -664,6 +703,7 @@ const KLineReplayBarInline: React.FC<{
 export interface KLineReplayChartRef {
   scrollToTime: (timestampSec: number) => void;
   scrollToRealTime: () => void;
+  autoFit: () => void;
   jumpToEntry: () => void;
   jumpToExit: () => void;
 }
@@ -692,11 +732,159 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
   const prevIndexRef = useRef<number | undefined>(currentIndex);
   const [portalHost, setPortalHost] = useState<HTMLDivElement | null>(null);
 
+  // TradingView Auto-fit & Log Scale State
+  const [isAutoFit, setIsAutoFit] = useState(true);
+  const [isLogScale, setIsLogScale] = useState(false);
+
+  // Dynamically sync right-space distance so future HTF candles count as part of the chart and never get cut off
+  const syncHtfRightOffset = (chart?: any, models?: PineSceneModel[]) => {
+    const targetChart = chart || currentKLineChartInstance;
+    if (!targetChart) return;
+
+    const overlayModels = models || activePineOverlayModels;
+    const dataList = targetChart.getDataList?.() || [];
+    const lastBarIdx = dataList.length - 1;
+
+    let maxFutureBars = 0;
+    if (overlayModels && overlayModels.length > 0 && lastBarIdx >= 0) {
+      for (const model of overlayModels) {
+        if (!model) continue;
+        if (model.boxes) {
+          for (const b of model.boxes) {
+            if (b.xloc === 'bar_index' || !b.xloc) {
+              const r = Math.max(b.left, b.right);
+              if (r > lastBarIdx) {
+                maxFutureBars = Math.max(maxFutureBars, r - lastBarIdx);
+              }
+            }
+          }
+        }
+        if (model.lines) {
+          for (const l of model.lines) {
+            if (l.xloc === 'bar_index' || !l.xloc) {
+              const r = Math.max(l.x1, l.x2);
+              if (r > lastBarIdx) {
+                maxFutureBars = Math.max(maxFutureBars, r - lastBarIdx);
+              }
+            }
+          }
+        }
+        if (model.labels) {
+          for (const lbl of model.labels) {
+            if ((lbl.xloc === 'bar_index' || !lbl.xloc) && lbl.x > lastBarIdx) {
+              maxFutureBars = Math.max(maxFutureBars, lbl.x - lastBarIdx);
+            }
+          }
+        }
+      }
+    }
+
+    const bs = targetChart.getBarSpace?.();
+    const curBarSpace = typeof bs === 'number' ? bs : (bs?.bar || 8);
+    const containerWidth = containerRef.current?.clientWidth || 1000;
+
+    let neededDistance = 120; // default comfortable right margin
+    if (maxFutureBars > 0) {
+      // Add 8 bars of breathing room so rightmost labels/wicks aren't pressed against the scale
+      const totalFutureBars = maxFutureBars + 8;
+      const calculatedPx = totalFutureBars * curBarSpace;
+      neededDistance = Math.max(160, Math.min(containerWidth - 150, calculatedPx + 24));
+    }
+
+    try {
+      targetChart.setMaxOffsetRightDistance(Math.max(neededDistance * 2, 800));
+      targetChart.setOffsetRightDistance(neededDistance, true);
+    } catch {}
+  };
+
+  // TradingView "Auto (fits data to screen)" handler
+  const handleAutoFit = () => {
+    setIsAutoFit(true);
+    const targetChart = currentKLineChartInstance;
+    if (!targetChart) return;
+
+    try {
+      // 1. Sync right space so HTF candles have full room
+      syncHtfRightOffset(targetChart);
+
+      // 2. Override indicator min/max to incorporate HTF candle bounds
+      if (activePineOverlayModels && activePineOverlayModels.length > 0) {
+        let pineMin = Infinity;
+        let pineMax = -Infinity;
+        for (const m of activePineOverlayModels) {
+          if (!m) continue;
+          if (m.boxes) {
+            for (const b of m.boxes) {
+              if (Number.isFinite(b.top)) pineMax = Math.max(pineMax, b.top);
+              if (Number.isFinite(b.bottom)) pineMin = Math.min(pineMin, b.bottom);
+            }
+          }
+          if (m.lines) {
+            for (const l of m.lines) {
+              if (Number.isFinite(l.y1)) {
+                pineMin = Math.min(pineMin, l.y1);
+                pineMax = Math.max(pineMax, l.y1);
+              }
+              if (Number.isFinite(l.y2)) {
+                pineMin = Math.min(pineMin, l.y2);
+                pineMax = Math.max(pineMax, l.y2);
+              }
+            }
+          }
+        }
+        if (pineMin !== Infinity && pineMax !== -Infinity) {
+          targetChart.overrideIndicator?.({
+            name: 'PINETS_OVERLAY',
+            minValue: pineMin,
+            maxValue: pineMax
+          });
+        }
+      }
+
+      // 3. Reset Y-axis auto calc flag on all draw panes
+      const panes = targetChart.getAllDrawPanes?.() || [];
+      for (const p of panes) {
+        const yAxis = (p as any)?.getYAxis?.() || (p as any)?.getAxis?.();
+        if (yAxis && typeof yAxis.setAutoCalcTickFlag === 'function') {
+          yAxis.setAutoCalcTickFlag(true);
+        }
+      }
+
+      // 4. Scroll to real-time with required right offset
+      targetChart.scrollToRealTime();
+
+      // 5. Force pane viewport adjustment for clean auto fit
+      targetChart.adjustPaneViewport(true, true, true, true, true);
+    } catch (e) {
+      console.warn('Auto fit error:', e);
+    }
+  };
+
+  // TradingView Logarithmic scale toggle handler
+  const handleToggleLog = () => {
+    const nextLog = !isLogScale;
+    setIsLogScale(nextLog);
+    const targetChart = currentKLineChartInstance;
+    if (!targetChart) return;
+
+    try {
+      targetChart.setStyles({
+        yAxis: {
+          type: nextLog ? 'log' : 'normal'
+        }
+      });
+      targetChart.adjustPaneViewport(false, false, true, true, true);
+    } catch (e) {
+      console.warn('Toggle log scale error:', e);
+    }
+  };
+
   // Expose imperative chart controls to parent modal
   useImperativeHandle(ref, () => ({
     scrollToTime: (timestampSec: number) => {
       if (currentKLineChartInstance) {
         try {
+          syncHtfRightOffset(currentKLineChartInstance);
           currentKLineChartInstance.scrollToTimestamp(timestampSec * 1000);
         } catch {}
       }
@@ -704,10 +892,12 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
     scrollToRealTime: () => {
       if (currentKLineChartInstance) {
         try {
+          syncHtfRightOffset(currentKLineChartInstance);
           currentKLineChartInstance.scrollToRealTime();
         } catch {}
       }
     },
+    autoFit: handleAutoFit,
     jumpToEntry: () => {
       onJumpToEntry?.();
     },
@@ -715,6 +905,18 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
       onJumpToExit?.();
     }
   }));
+
+  // Keyboard shortcut listener for Auto-fit (Alt+A or Alt+R)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.altKey && e.code === 'KeyA') || (e.altKey && e.code === 'KeyR')) {
+        e.preventDefault();
+        handleAutoFit();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Pine Script Indicator Studio Multi-Indicator State
   const [isPineModalOpen, setIsPineModalOpen] = useState(false);
@@ -769,6 +971,8 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
       .filter(i => i.visible && i.model && i.model.overlay)
       .map(i => i.model);
 
+    syncHtfRightOffset(currentKLineChartInstance, activePineOverlayModels);
+
     try {
       const toSave = indicators.map(i => ({
         id: i.id,
@@ -787,6 +991,7 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
   const triggerChartRedraw = () => {
     if (currentKLineChartInstance && typeof currentKLineChartInstance.applyNewData === 'function') {
       try {
+        syncHtfRightOffset(currentKLineChartInstance);
         const curData = currentKLineChartInstance.getDataList();
         if (curData && curData.length > 0) {
           currentKLineChartInstance.applyNewData(curData);
@@ -1096,9 +1301,9 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
           }
         },
         grid: {
-          show: true,
+          show: false,
           horizontal: {
-            show: true,
+            show: false,
             size: 1,
             color: theme === 'dark' ? '#1F2937' : '#F3F4F6',
             style: 'solid' as any
@@ -1128,6 +1333,11 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
     } catch {}
 
     chartProRef.current = chart;
+
+    setTimeout(() => {
+      syncHtfRightOffset(chart);
+      chart.scrollToRealTime();
+    }, 120);
 
     // Mount portal host inside .klinecharts-pro-period-bar next to "Full Screen" tab
     const periodBar = chartDiv.querySelector('.klinecharts-pro-period-bar') as HTMLElement | null;
@@ -1196,6 +1406,7 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
 
     // If stepping forward by 1 candle (normal play), emit bar smoothly
     if (prevIndex !== undefined && currentIndex === prevIndex + 1) {
+      syncHtfRightOffset(currentKLineChartInstance);
       datafeedRef.current.emitBar({
         timestamp: currentCandle.time * 1000,
         open: currentCandle.open,
@@ -1204,6 +1415,9 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
         close: currentCandle.close,
         volume: currentCandle.volume || 0
       });
+      if ((isAutoFit || isPlaying) && currentKLineChartInstance) {
+        currentKLineChartInstance.scrollToRealTime?.();
+      }
     } else if (prevIndex !== currentIndex) {
       // Jumped or scrubbed: apply new visible slice directly to underlying chart
       const subset = candles.slice(0, currentIndex + 1);
@@ -1217,10 +1431,13 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
       }));
 
       if (currentKLineChartInstance && typeof currentKLineChartInstance.applyNewData === 'function') {
+        syncHtfRightOffset(currentKLineChartInstance);
         currentKLineChartInstance.applyNewData(kLineDataList);
         setTimeout(() => {
           try {
+            syncHtfRightOffset(currentKLineChartInstance);
             currentKLineChartInstance.scrollToRealTime();
+            currentKLineChartInstance.adjustPaneViewport(false, false, true, true, true);
           } catch {}
         }, 15);
       } else if (chartProRef.current) {
@@ -1273,6 +1490,47 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
           }
 
           activePineOverlayModels = updatedModels;
+          syncHtfRightOffset(currentKLineChartInstance, updatedModels);
+
+          // Dynamically adapt price scale to include HTF candle highs and lows
+          let pineMin = Infinity;
+          let pineMax = -Infinity;
+          for (const m of updatedModels) {
+            if (!m) continue;
+            if (m.boxes) {
+              for (const b of m.boxes) {
+                if (Number.isFinite(b.top)) pineMax = Math.max(pineMax, b.top);
+                if (Number.isFinite(b.bottom)) pineMin = Math.min(pineMin, b.bottom);
+              }
+            }
+            if (m.lines) {
+              for (const l of m.lines) {
+                if (Number.isFinite(l.y1)) {
+                  pineMin = Math.min(pineMin, l.y1);
+                  pineMax = Math.max(pineMax, l.y1);
+                }
+                if (Number.isFinite(l.y2)) {
+                  pineMin = Math.min(pineMin, l.y2);
+                  pineMax = Math.max(pineMax, l.y2);
+                }
+              }
+            }
+          }
+          if (pineMin !== Infinity && pineMax !== -Infinity && currentKLineChartInstance?.overrideIndicator) {
+            try {
+              currentKLineChartInstance.overrideIndicator({
+                name: 'PINETS_OVERLAY',
+                minValue: pineMin,
+                maxValue: pineMax
+              });
+            } catch {}
+          }
+
+          if ((isAutoFit || isPlaying) && currentKLineChartInstance) {
+            try {
+              currentKLineChartInstance.scrollToRealTime();
+            } catch {}
+          }
           triggerChartRedraw();
         }
       } catch (err) {
@@ -1481,6 +1739,37 @@ export const KLineReplayChart = React.forwardRef<KLineReplayChartRef, Props>(({
           onApply={handleApplyIndicatorInputs}
         />
       )}
+
+      {/* TradingView Authentic "Auto" [A] and "Log" [L] buttons on bottom-right price scale */}
+      <div
+        className="absolute bottom-1 right-14 z-20 flex items-center gap-0.5 bg-[#1E222D]/95 border border-[#2A2E39] rounded px-0.5 py-0.5 shadow-md select-none"
+        title="Scale options"
+      >
+        <button
+          type="button"
+          onClick={handleAutoFit}
+          className={`w-4 h-4 flex items-center justify-center rounded text-[10px] font-bold font-mono transition-all ${
+            isAutoFit
+              ? 'bg-[#2962FF] text-white shadow-sm'
+              : 'text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39]'
+          }`}
+          title="Auto (fits data to screen) [Alt+A]"
+        >
+          A
+        </button>
+        <button
+          type="button"
+          onClick={handleToggleLog}
+          className={`w-4 h-4 flex items-center justify-center rounded text-[10px] font-bold font-mono transition-all ${
+            isLogScale
+              ? 'bg-[#2962FF] text-white shadow-sm'
+              : 'text-[#787B86] hover:text-[#D1D4DC] hover:bg-[#2A2E39]'
+          }`}
+          title="Toggle logarithmic scale"
+        >
+          L
+        </button>
+      </div>
 
       {/* Pine Script Indicator Studio Modal */}
       <KLinePineModal
